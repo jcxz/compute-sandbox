@@ -2,4 +2,4 @@
 #define CA_PRIVATE_IMPLEMENTATION
 #define MTL_PRIVATE_IMPLEMENTATION
 
-#include "core/mtl.h"
+#include "gpu/metal/mtl.h"

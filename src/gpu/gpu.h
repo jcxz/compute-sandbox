@@ -11,9 +11,20 @@ enum AllocationMode
 	Device = (1 << 1),
 };
 
+enum class GpuAdapterType
+{
+	Default = (1 << 0),
+	Metal   = (1 << 1),
+	Vulkan  = (1 << 2),
+};
+
+// GPU initialization and termination
+extern bool InitializeGpu(const GpuAdapterType type = GpuAdapterType::Default);
+extern void TerminateGpu();
+
 //! Allocates GPU memory of a given size
 //! optional flags specify whether the allocation is exclusive to GPU and not visible to CPU
-//! or if the allocation is Shared, i.e. visible to CPU and can be mapped fro reading/writing by CPU.
+//! or if the allocation is Shared, i.e. visible to CPU and can be mapped for reading/writing by CPU.
 //! This is the default mode
 extern void* GpuAlloc(const size_t size, const AllocationMode mode = AllocationMode::Shared);
 

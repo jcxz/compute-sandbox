@@ -1,4 +1,4 @@
-#include "core/kernel.h"
+#include "gpu/kernel.h"
 
 DECL_KERNEL_ARGS_BEGIN(Args)
 	DECL_KERNEL_ARGS_FIELD(uint32_t, dstStride)

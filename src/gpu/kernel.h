@@ -1,11 +1,11 @@
 #pragma once
 
-#if defined (__SLANG__)
-#include "core/kernel_slang.h"
+#if defined(__SLANG__)
+#include "gpu/kernel_slang.h"
 #elif defined(__METAL_VERSION__)
-#include "core/kernel_metal.h"
+#include "gpu/kernel_metal.h"
 #else
-#include "core/kernel_cpu.h"
+#include "gpu/kernel_cpu.h"
 #endif
 
 #define DECL_KERNEL_1D(NAME, ARGS) DECL_KERNEL(uint, NAME, ARGS)

@@ -1,5 +1,5 @@
-#include "core/mtl.h"
-#include "kernels/invert3.h"
+#include "gpu/gpu.h"
+#include "invert.h"
 #include <algorithm>
 #include <random>
 #include <chrono>
@@ -64,10 +64,9 @@ static void GenerateCheckerboard(uint8_t* data, const uint32_t w, const uint32_t
 }
 
 
-bool test5()
+bool testInvert()
 {
-	// a global autorelease pool for all temporary objects released with autorelease (otherwise they would leak)
-	NS::SharedPtr<NS::AutoreleasePool> pAutoReleasePool = TransferPtr(NS::AutoreleasePool::alloc()->init());
+	InitializeGpu();
 
 	// Create buffers
 	const size_t W = 8192;
@@ -131,6 +130,8 @@ bool test5()
 	GpuFree  (src);
 	std::free(cpu);
 	GpuFree  (gpu);
+
+	TerminateGpu();
 
 	return true;
 }

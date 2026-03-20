@@ -1,10 +1,20 @@
 #pragma once
 
 #include "core/reflection.h"
-#include "core/gpu.h"
-#include <simd/simd.h>
+#include "gpu/gpu.h"
 
-using namespace simd; // so that the code between CPU and GPU is the same
+struct uint2
+{
+	uint32_t x;
+	uint32_t y;
+};
+
+struct uint3
+{
+	uint32_t x;
+	uint32_t y;
+	uint32_t z;
+};
 
 #define MTL_CONSTANT const
 #define MTL_DEVICE

@@ -5,45 +5,50 @@ project(${PROJECT_NAME})
 
 set(CMAKE_CXX_STANDARD 17)
 
+if(APPLE)
+	option(BUILD_METAL_ADAPTER "Build Metal adapter" ON)
+else()
+	option(BUILD_METAL_ADAPTER "Build Metal adapter" OFF)
+endif()
+
 set(HEADERS
 	src/core/global.h
-	src/core/gpu.h
-	src/core/kernel.h
-	src/core/kernel_cpu.h
-	src/core/kernel_metal.h
-	src/core/kernel_slang.h
 	src/core/meta.h
-	src/core/mtl.h
 	src/core/preprocessor.h
 	src/core/reflection.h
-	src/kernels/add.h
-	src/kernels/invert.h
-	src/kernels/invert2.h
-	src/kernels/invert3.h
-	src/tests/common.h
+	src/gpu/gpu.h
+	src/gpu/adapter.h
+	src/gpu/kernel.h
+	src/gpu/kernel_cpu.h
+	src/gpu/kernel_metal.h
+	src/gpu/kernel_registry.h
+	src/gpu/kernel_slang.h
+	src/tests/invert/invert.h
+)
+
+set(HEADERS_METAL
+	src/gpu/metal/adapter_mtl.h
+	src/gpu/metal/mtl.h
 )
 
 set(SOURCES
-	src/core/gpu.cpp
-	src/core/mtl.cpp
 	src/core/reflection.cpp
-	src/tests/test1.cpp
-	src/tests/test2.cpp
-	src/tests/test3.cpp
-	src/tests/test4.cpp
-	src/tests/test5.cpp
+	src/gpu/gpu.cpp
+	src/tests/invert/test.cpp
 	src/main.cpp
 )
 
+set(SOURCES_METAL
+	src/gpu/metal/adapter_mtl.cpp
+	src/gpu/metal/mtl.cpp
+)
+
 set(METAL_SHADERS
-	src/kernels/add.metal
-	src/kernels/invert.metal
-	src/kernels/invert2.metal
-	src/kernels/invert3.metal
+	src/tests/invert/invert.metal
 )
 
 set(SLANG_SHADERS
-	src/kernels/invert3.slang
+	src/tests/invert/invert.slang
 )
 
 set(GENERATED_METAL_SHADERS)
@@ -66,29 +71,36 @@ foreach(SLANG ${SLANG_SHADERS})
 	list(APPEND GENERATED_METAL_SHADERS "${CMAKE_BINARY_DIR}/shaders/${SLANG}.metal")
 endforeach()
 
-set_source_files_properties(
-	${METAL_SHADERS} ${GENERATED_METAL_SHADERS} PROPERTIES
-	LANGUAGE METAL
-	COMPILE_OPTIONS "-Isrc")
+if (BUILD_METAL_ADAPTER)
+	set_source_files_properties(
+		${METAL_SHADERS} ${GENERATED_METAL_SHADERS} PROPERTIES
+		LANGUAGE METAL
+		COMPILE_OPTIONS "-Isrc")
 
-add_executable(${PROJECT_NAME} ${HEADERS} ${SOURCES} ${METAL_SHADERS} ${GENERATED_METAL_SHADERS} ${SLANG_SHADERS})
+	add_executable(${PROJECT_NAME} ${HEADERS} ${HEADERS_METAL} ${SOURCES} ${SOURCES_METAL} ${METAL_SHADERS} ${GENERATED_METAL_SHADERS} ${SLANG_SHADERS})
 
-# add dependencies
-include(cmake/CPM.cmake)
+	# add dependencies
+	include(cmake/CPM.cmake)
 
-CPMAddPackage(
-	NAME     metal-cpp
-	URL      http://github.com/bkaradzic/metal-cpp/archive/refs/heads/metal-cpp_26.tar.gz
-	URL_HASH SHA256=b0e6d0a39618f38049e915238ea1400aaea5292167385acc52a1666fd0509aab
-)
+	CPMAddPackage(
+		NAME     metal-cpp
+		URL      http://github.com/bkaradzic/metal-cpp/archive/refs/heads/metal-cpp_26.tar.gz
+		URL_HASH SHA256=b0e6d0a39618f38049e915238ea1400aaea5292167385acc52a1666fd0509aab
+	)
+
+	target_include_directories(${PROJECT_NAME} PRIVATE ${metal-cpp_SOURCE_DIR})
+
+	target_compile_definitions(${PROJECT_NAME} PRIVATE "BUILD_METAL_ADAPTER")
+
+	target_link_libraries(${PROJECT_NAME}
+		"-framework Foundation"
+		"-framework QuartzCore"
+		"-framework Metal"
+	)
+else()
+	add_executable(${PROJECT_NAME} ${HEADERS} ${SOURCES} ${SLANG_SHADERS})
+endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE
-	${metal-cpp_SOURCE_DIR}
 	src
-)
-
-target_link_libraries(${PROJECT_NAME}
-	"-framework Foundation"
-	"-framework QuartzCore"
-	"-framework Metal"
 )
