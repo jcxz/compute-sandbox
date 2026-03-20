@@ -1,0 +1,15 @@
+#pragma once
+
+#include "core/preprocessor.h"
+
+#define MTL_CONSTANT
+#define MTL_DEVICE
+#define DECL_KERNEL(ITYPE, NAME, ARGS) \
+	[[shader("compute")]] void NAME(ITYPE index : SV_DispatchThreadID, uniform ConstantBuffer<ARGS> args)
+
+#define DECL_KERNEL_ARGS_BEGIN(NAME) struct NAME {
+#define DECL_KERNEL_ARGS_FIELD_(TYPE, NAME, ARRAY) TYPE NAME ARRAY;
+#define DECL_KERNEL_ARGS_FIELD2(TYPE, NAME) DECL_KERNEL_ARGS_FIELD_(TYPE, NAME, )
+#define DECL_KERNEL_ARGS_FIELD3(TYPE, NAME, ARRAY) DECL_KERNEL_ARGS_FIELD_(TYPE, NAME, ARRAY)
+#define DECL_KERNEL_ARGS_FIELD(...) EM_CONCAT(DECL_KERNEL_ARGS_FIELD, EM_NARGS(__VA_ARGS__))(__VA_ARGS__)
+#define DECL_KERNEL_ARGS_END(NAME) };
