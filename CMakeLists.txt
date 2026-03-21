@@ -66,7 +66,7 @@ foreach(SLANG ${SLANG_SHADERS})
 			-D__SLANG__=1
 		DEPENDS ${SLANG}
 		DEPFILE "${CMAKE_BINARY_DIR}/shaders/${SLANG}.d" # to make sure that the shader recompiles when only its includes change
-		WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/slang-cache"
+		WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
 		COMMENT "Slang → Metal: ${CMAKE_BINARY_DIR}/shaders/${SLANG}.metal")
 	list(APPEND GENERATED_METAL_SHADERS "${CMAKE_BINARY_DIR}/shaders/${SLANG}.metal")
 endforeach()
