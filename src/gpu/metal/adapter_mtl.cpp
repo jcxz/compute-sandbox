@@ -111,6 +111,11 @@ bool AdapterMtl::ExecuteKernel(
 
 bool AdapterMtl::Init()
 {
+	// the command queue is initialized as last in the initialization process,
+	// so if we have a valid queue, we know the initialization has already succeeded in the past
+	if (mpCommandQueue)
+		return true;
+
 	// create an autorelease pool for this adapter
 	if (!(mpAutoReleasePool = TransferPtr(NS::AutoreleasePool::alloc()->init())))
 	{
@@ -121,11 +126,6 @@ bool AdapterMtl::Init()
 	// an autorelease pool to make sure that any temporary (autorelease) allocations (e.g. the command buffer)
 	// get destroyed at the end of this function
 	NS::SharedPtr<NS::AutoreleasePool> pAutoReleasePool = TransferPtr(NS::AutoreleasePool::alloc()->init());
-
-	// the command queue is initialized as last in the initialization process,
-	// so if we have a valid queue, we know the initialization has already succeeded in the past
-	if (mpCommandQueue)
-		return true;
 
 	// create default system device
 	if (!(mpDevice = TransferPtr(MTL::CreateSystemDefaultDevice())))

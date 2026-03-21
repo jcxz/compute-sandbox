@@ -19,6 +19,8 @@ bool InitializeGpu(const GpuAdapterType type)
 
 	switch (type)
 	{
+		case GpuAdapterType::Default:
+			// pick the first enabled Adapter whichever that may be
 #ifdef BUILD_METAL_ADAPTER
 		case GpuAdapterType::Metal: gAdapter = gpu::CreateMetalAdapter(); break;
 #endif
