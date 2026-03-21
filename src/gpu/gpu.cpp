@@ -5,8 +5,12 @@
 
 static gpu::IAdapter* gAdapter = nullptr;
 
-extern gpu::IAdapter* CreateMetalAdapter();
-extern void DestroyMetalAdapter(gpu::IAdapter* pAdapter);
+namespace gpu
+{
+
+extern IAdapter* CreateMetalAdapter();
+
+}
 
 bool InitializeGpu(const GpuAdapterType type)
 {
@@ -16,7 +20,7 @@ bool InitializeGpu(const GpuAdapterType type)
 	switch (type)
 	{
 #ifdef BUILD_METAL_ADAPTER
-		case GpuAdapterType::Metal: gAdapter = CreateMetalAdapter(); break;
+		case GpuAdapterType::Metal: gAdapter = gpu::CreateMetalAdapter(); break;
 #endif
 		default:
 			break;

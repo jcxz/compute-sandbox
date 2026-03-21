@@ -37,7 +37,7 @@ public:
 
 	static AdapterMtl* CreateMetalAdapter()
 	{
-		std::unique_ptr<AdapterMtl> pAdapter = std::make_unique<AdapterMtl>();
+		std::unique_ptr<AdapterMtl> pAdapter(new AdapterMtl);
 		return pAdapter->Init() ? pAdapter.release() : nullptr;
 	}
 

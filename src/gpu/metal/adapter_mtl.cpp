@@ -159,7 +159,7 @@ bool AdapterMtl::Init()
 
 const AdapterMtl::KernelInfo* AdapterMtl::RequestKernel(const uint32_t id)
 {
-	EM_ASSERT(mKernels.size() == KernelRegistry::GetInstance()->GetKernelCount(), "Kernel registry size mismatch");
+	EM_ASSERT((mKernels.size() == KernelRegistry::GetInstance()->GetKernelCount()) && "Kernel registry size mismatch");
 
 	const std::string& kernelName = KernelRegistry::GetInstance()->GetKernelName(id);
 	if (kernelName.empty())
