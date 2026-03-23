@@ -3,6 +3,8 @@
 #include "gpu/gpu.h"
 #include "gpu/adapter.h"
 #include "gpu/vulkan/vk.h"
+#include <slang.h>
+#include <slang-com-ptr.h>
 
 #include <memory>
 #include <unordered_map>
@@ -21,11 +23,14 @@ class AdapterVk final : public IAdapter
 		AdapterVk* pAdapter = nullptr;
 		VkPipeline pipeline = VK_NULL_HANDLE;
 		VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+		std::vector<VkDescriptorSetLayout> descriptorSetLayouts;
 
 		~KernelInfo()
 		{
 			vkDestroyPipeline(pAdapter->mDevice, pipeline, nullptr);
 			vkDestroyPipelineLayout(pAdapter->mDevice, pipelineLayout, nullptr);
+			for (VkDescriptorSetLayout layout : descriptorSetLayouts)
+				vkDestroyDescriptorSetLayout(pAdapter->mDevice, layout, nullptr);
 		}
 	};
 
@@ -70,8 +75,9 @@ private:
 	uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) const;
 	bool IsInitialized() const;
 	bool Init();
-
 	const KernelInfo* RequestKernel(const uint32_t id);
+	bool BuildSlangProgram(const std::string& kernelName, slang::IComponentType** ppProgram);
+	bool CreateDescriptorSetLayouts(slang::IComponentType* pProgram, std::vector<VkDescriptorSetLayout>& descriptorSetLayouts);
 
 private:
 	AdapterVk() = default;
@@ -81,7 +87,11 @@ private:
 	AdapterVk& operator=(const AdapterVk& ) = delete;
 
 private:
-	//!
+	//! Slang global session (basically a compiler instance)
+	Slang::ComPtr<slang::IGlobalSession> mSlangGlobalSession;
+	//! Slang session (keeps all compiler configuration)
+	Slang::ComPtr<slang::ISession> mSlangSession;
+	//! Vulkan instance
 	VkInstance mInstance = VK_NULL_HANDLE;
 	//! Vulkan physical device
 	VkPhysicalDevice mPhysicalDevice = VK_NULL_HANDLE;

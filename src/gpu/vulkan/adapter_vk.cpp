@@ -7,6 +7,25 @@
 
 
 
+static VkDescriptorType MapSlangTypeToVulkanDescriptorType(slang::TypeReflection* type)
+{
+	const auto kind = type->getKind();
+	switch (kind)
+	{
+		case slang::TypeReflection::Kind::Resource:
+		{
+			const auto resourceType = type->getResourceShape();
+			const auto access = type->getResourceAccess();
+			// Simplified mapping, can be expanded for textures, etc.
+			return (access == SLANG_RESOURCE_ACCESS_READ_WRITE) ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		}
+		case slang::TypeReflection::Kind::ConstantBuffer:
+			return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		default:
+			return VK_DESCRIPTOR_TYPE_MAX_ENUM;
+	}
+}
+
 namespace gpu
 {
 
@@ -143,40 +162,63 @@ bool AdapterVk::ExecuteKernel(
 		return false;
 	}
 
-	// 2. Setup the argument bindings into descriptor sets using pArgs and pArgsInfo
-	// TODO: Create descriptor sets based on the reflection info of the arguments.
+	// 2. Allocate descriptor sets
+	VkDescriptorSetAllocateInfo descriptorSetAllocInfo;
+	descriptorSetAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	descriptorSetAllocInfo.pNext = nullptr;
+	descriptorSetAllocInfo.descriptorPool = mDescriptorPool;
+	descriptorSetAllocInfo.descriptorSetCount = pKernel->descriptorSetLayouts.size();
+	descriptorSetAllocInfo.pSetLayouts = pKernel->descriptorSetLayouts.data();
 
-	// 3. Allocate a command buffer
-	VkCommandBufferAllocateInfo allocInfo{};
-	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	allocInfo.commandPool = mCommandPool;
-	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	allocInfo.commandBufferCount = 1;
+	std::vector<VkDescriptorSet> descriptorSets(pKernel->descriptorSetLayouts.size());
+	if (vkAllocateDescriptorSets(mDevice, &descriptorSetAllocInfo, descriptorSets.data()) != VK_SUCCESS)
+	{
+		std::cerr << "AdapterVk::ExecuteKernel() - Failed to allocate descriptor sets!" << std::endl;
+		return false;
+	}
+
+	// 3. Fill descriptor sets with kernel arguments
+
+	// 4. Allocate a command buffer
+	VkCommandBufferAllocateInfo commandBufferAllocInfo;
+	commandBufferAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	commandBufferAllocInfo.pNext = nullptr;
+	commandBufferAllocInfo.commandPool = mCommandPool;
+	commandBufferAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	commandBufferAllocInfo.commandBufferCount = 1;
 
 	VkCommandBuffer commandBuffer;
-	if (vkAllocateCommandBuffers(mDevice, &allocInfo, &commandBuffer) != VK_SUCCESS)
+	if (vkAllocateCommandBuffers(mDevice, &commandBufferAllocInfo, &commandBuffer) != VK_SUCCESS)
 	{
 		std::cerr << "AdapterVk::ExecuteKernel() - Failed to allocate command buffers!" << std::endl;
 		return false;
 	}
 
-	// 4. Begin recording
+	// 5. Begin recording
 	VkCommandBufferBeginInfo beginInfo{};
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
 	vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
-	// 5. Bind Pipeline and Descriptor sets
+	// 6. Bind Pipeline and Descriptor sets
 	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pKernel->pipeline);
-	// vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pKernel->pipelineLayout, ...);
+	vkCmdBindDescriptorSets(
+		commandBuffer,
+		VK_PIPELINE_BIND_POINT_COMPUTE,
+		pKernel->pipelineLayout,
+		0,
+		descriptorSets.size(),
+		descriptorSets.data(),
+		0,
+		nullptr);
 
-	// 6. Dispatch
+	// 7. Dispatch
 	vkCmdDispatch(commandBuffer, nx, ny, nz);
 
 	vkEndCommandBuffer(commandBuffer);
 
-	// 7. Submit
+	// 8. Submit
 	VkSubmitInfo submitInfo;
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 	submitInfo.pNext = nullptr;
@@ -190,11 +232,12 @@ bool AdapterVk::ExecuteKernel(
 
 	vkQueueSubmit(mComputeQueue, 1, &submitInfo, VK_NULL_HANDLE);
 
-	// 8. Wait (Synchronous for now)
+	// 9. Wait (Synchronous for now)
 	vkQueueWaitIdle(mComputeQueue);
 
-	// 9. Cleanup
+	// 10. Cleanup
 	vkFreeCommandBuffers(mDevice, mCommandPool, 1, &commandBuffer);
+	vkResetDescriptorPool(mDevice, mDescriptorPool, 0);
 
 	return true;
 }
@@ -227,50 +270,42 @@ const AdapterVk::KernelInfo* AdapterVk::RequestKernel(const uint32_t id)
 	auto& kernel = mKernels[id];
 	if (kernel.pipeline == VK_NULL_HANDLE)
 	{
-		// Load the compiled SPIR-V shader module
-		std::string shaderPath = "shaders/" + kernelName + ".spv";
-		std::ifstream file(shaderPath, std::ios::ate | std::ios::binary);
-		if (!file.is_open())
+		// build slang program
+		Slang::ComPtr<slang::IComponentType> pProgram;
+		if (!BuildSlangProgram(kernelName, pProgram.writeRef()))
 		{
-			std::cerr << "Failed to open kernel shader: " << shaderPath << std::endl;
+			std::cerr << "Failed to build Slang program for " << kernelName << std::endl;
 			return nullptr;
 		}
 
-		size_t fileSize = static_cast<size_t>(file.tellg());
-		std::vector<char> buffer(fileSize);
-		file.seekg(0);
-		file.read(buffer.data(), fileSize);
-		file.close();
-
-		VkShaderModuleCreateInfo createInfo;
-		createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-		createInfo.pNext = nullptr;
-		createInfo.flags = 0;
-		createInfo.codeSize = buffer.size();
-		createInfo.pCode = reinterpret_cast<const uint32_t*>(buffer.data());
-
-		VkShaderModule shaderModule;
-		if (vkCreateShaderModule(mDevice, &createInfo, nullptr, &shaderModule) != VK_SUCCESS)
+		Slang::ComPtr<slang::IBlob> pSPIRVCode;
 		{
-			std::cerr << "Failed to create shader module for " << kernelName << std::endl;
+			Slang::ComPtr<slang::IBlob> pDiagnostics;
+			pProgram->getEntryPointCode(0, 0, pSPIRVCode.writeRef(), pDiagnostics.writeRef());
+			if (!pSPIRVCode)
+			{
+				std::cerr << "Failed to get SPIR-V code from Slang program." << std::endl;
+				if (pDiagnostics)
+					std::cerr << (const char*)pDiagnostics->getBufferPointer() << std::endl;
+				return nullptr;
+			}
+		}
+
+		// create descriptor set layouts using slang's reflection API
+		std::vector<VkDescriptorSetLayout> descriptorSetLayouts;
+		if (!CreateDescriptorSetLayouts(pProgram, descriptorSetLayouts))
+		{
+			std::cerr << "Failed to create descriptor set layouts for " << kernelName << std::endl;
 			return nullptr;
 		}
 
-		VkPipelineShaderStageCreateInfo shaderStageInfo;
-		shaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-		shaderStageInfo.pNext = nullptr;
-		shaderStageInfo.flags = 0;
-		shaderStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-		shaderStageInfo.module = shaderModule;
-		shaderStageInfo.pName = kernelName.c_str(); // Default entry point name from slang
-
-		// NOTE: Placeholder Pipeline Layout. Needs properly created VkDescriptorSetLayout from reflection.
+		// create pipeline layout
 		VkPipelineLayoutCreateInfo pipelineLayoutInfo;
 		pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInfo.pNext = nullptr;
 		pipelineLayoutInfo.flags = 0;
-		pipelineLayoutInfo.setLayoutCount = 0;
-		pipelineLayoutInfo.pSetLayouts = nullptr;
+		pipelineLayoutInfo.setLayoutCount = (uint32_t)descriptorSetLayouts.size();
+		pipelineLayoutInfo.pSetLayouts = descriptorSetLayouts.data();
 		pipelineLayoutInfo.pushConstantRangeCount = 0;
 		pipelineLayoutInfo.pPushConstantRanges = nullptr;
 
@@ -278,32 +313,52 @@ const AdapterVk::KernelInfo* AdapterVk::RequestKernel(const uint32_t id)
 		if (vkCreatePipelineLayout(mDevice, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS)
 		{
 			std::cerr << "Failed to create pipeline layout for " << kernelName << std::endl;
-			vkDestroyShaderModule(mDevice, shaderModule, nullptr);
+			for (auto& descriptorSetLayout : descriptorSetLayouts)
+				vkDestroyDescriptorSetLayout(mDevice, descriptorSetLayout, nullptr);
 			return nullptr;
 		}
 
-		VkComputePipelineCreateInfo pipelineInfo;
+		VkShaderModuleCreateInfo moduleCreateInfo{};
+		moduleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+		moduleCreateInfo.codeSize = pSPIRVCode->getBufferSize();
+		moduleCreateInfo.pCode = (const uint32_t*)pSPIRVCode->getBufferPointer();
+
+		VkShaderModule shaderModule;
+		if (vkCreateShaderModule(mDevice, &moduleCreateInfo, nullptr, &shaderModule) != VK_SUCCESS)
+		{
+			std::cerr << "Failed to create shader module for " << kernelName << std::endl;
+			vkDestroyPipelineLayout(mDevice, pipelineLayout, nullptr);
+			for (auto& descriptorSetLayout : descriptorSetLayouts)
+				vkDestroyDescriptorSetLayout(mDevice, descriptorSetLayout, nullptr);
+			return nullptr;
+		}
+
+		VkPipelineShaderStageCreateInfo shaderStageInfo{};
+		shaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		shaderStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+		shaderStageInfo.module = shaderModule;
+		shaderStageInfo.pName = kernelName.c_str();
+
+		VkComputePipelineCreateInfo pipelineInfo{};
 		pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-		pipelineInfo.pNext = nullptr;
-		pipelineInfo.flags = 0;
 		pipelineInfo.stage = shaderStageInfo;
 		pipelineInfo.layout = pipelineLayout;
-		pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
-		pipelineInfo.basePipelineIndex = -1;
 
 		VkPipeline pipeline;
 		if (vkCreateComputePipelines(mDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS)
 		{
 			std::cerr << "Failed to create compute pipeline for " << kernelName << std::endl;
-			vkDestroyPipelineLayout(mDevice, pipelineLayout, nullptr);
 			vkDestroyShaderModule(mDevice, shaderModule, nullptr);
+			vkDestroyPipelineLayout(mDevice, pipelineLayout, nullptr);
+			for (auto& descriptorSetLayout : descriptorSetLayouts)
+				vkDestroyDescriptorSetLayout(mDevice, descriptorSetLayout, nullptr);
 			return nullptr;
 		}
 
-		// we can destroy the shader module now that the pipeline is created
 		vkDestroyShaderModule(mDevice, shaderModule, nullptr);
 
-		// Cache successful pipeline build
+		kernel.pAdapter = this;
+		kernel.descriptorSetLayouts = std::move(descriptorSetLayouts);
 		kernel.pipelineLayout = pipelineLayout;
 		kernel.pipeline = pipeline;
 	}
@@ -311,20 +366,153 @@ const AdapterVk::KernelInfo* AdapterVk::RequestKernel(const uint32_t id)
 	return &kernel;
 }
 
+bool AdapterVk::BuildSlangProgram(const std::string& kernelName, slang::IComponentType** ppProgram)
+{
+	// compile slang shader
+	Slang::ComPtr<slang::IModule> pModule;
+	{
+		Slang::ComPtr<slang::IBlob> pDiagnostics;
+		pModule = mSlangSession->loadModule(kernelName.c_str(), pDiagnostics.writeRef());
+		if (!pModule)
+		{
+			std::cerr << "Failed to load Slang module: " << kernelName << std::endl;
+			if (pDiagnostics)
+				std::cerr << (const char*)pDiagnostics->getBufferPointer() << std::endl;
+			return false;
+		}
+	}
+
+	Slang::ComPtr<slang::IEntryPoint> pEntryPoint;
+	if (pModule->findEntryPointByName(kernelName.c_str(), pEntryPoint.writeRef()) != SLANG_OK)
+	{
+		std::cerr << "Failed to find entry point: " << kernelName << std::endl;
+		return false;
+	}
+
+	// link slang shader
+	{
+		slang::IComponentType* components[] = { pModule, pEntryPoint };
+		Slang::ComPtr<slang::IBlob> pDiagnostics;
+		if (mSlangSession->createCompositeComponentType(components, SLANG_COUNT_OF(components), ppProgram, pDiagnostics.writeRef()) != SLANG_OK)
+		{
+			std::cerr << "Failed to create Slang composite component program." << std::endl;
+			if (pDiagnostics)
+				std::cerr << (const char*)pDiagnostics->getBufferPointer() << std::endl;
+			return false;
+		}
+	}
+
+	//Slang::ComPtr<slang::IComponentType> pLinkedProgram;
+	//{
+	//	Slang::ComPtr<slang::IBlob> pDiagnostics;
+	//	pProgram->link(pLinkedProgram.writeRef(), pDiagnostics.writeRef());
+	//	if (!pLinkedProgram)
+	//	{
+	//		std::cerr << "Failed to link Slang program." << std::endl;
+	//		if (pDiagnostics)
+	//			std::cerr << (const char*)pDiagnostics->getBufferPointer() << std::endl;
+	//		return nullptr;
+	//	}
+	//}
+
+	return true;
+}
+
+bool AdapterVk::CreateDescriptorSetLayouts(slang::IComponentType* pProgram, std::vector<VkDescriptorSetLayout>& descriptorSetLayouts)
+{
+	std::unordered_map<uint32_t, std::vector<VkDescriptorSetLayoutBinding>> setBindings;
+
+	slang::ProgramLayout* pReflection = pProgram->getLayout();
+	slang::EntryPointReflection* pEntryPointReflection = pReflection->getEntryPointByIndex(0);
+	const uint32_t parameterCount = pEntryPointReflection->getParameterCount();
+	for (uint32_t i = 0; i < parameterCount; ++i)
+	{
+		slang::VariableLayoutReflection* pParam = pEntryPointReflection->getParameterByIndex(i);
+
+		VkDescriptorSetLayoutBinding binding;
+		binding.binding = (uint32_t) pParam->getBindingIndex();
+		binding.descriptorType = MapSlangTypeToVulkanDescriptorType(pParam->getType());
+		binding.descriptorCount = 1; // Simplified
+		binding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+		binding.pImmutableSamplers = nullptr;
+
+		setBindings[pParam->getBindingSpace()].push_back(binding);
+	}
+
+	uint32_t maxSetIndex = 0;
+	for (auto const& [setIndex, bindings] : setBindings)
+		maxSetIndex = std::max(maxSetIndex, setIndex);
+
+	descriptorSetLayouts.resize(maxSetIndex + 1, VK_NULL_HANDLE);
+
+	for (auto const& [setIndex, bindings] : setBindings)
+	{
+		VkDescriptorSetLayoutCreateInfo layoutInfo;
+		layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		layoutInfo.pNext = nullptr;
+		layoutInfo.flags = 0;
+		layoutInfo.bindingCount = (uint32_t)bindings.size();
+		layoutInfo.pBindings = bindings.data();
+
+		if (vkCreateDescriptorSetLayout(mDevice, &layoutInfo, nullptr, &descriptorSetLayouts[setIndex]) != VK_SUCCESS)
+		{
+			std::cerr << "Failed to create descriptor set layout for set " << setIndex << std::endl;
+			return false;
+		}
+	}
+
+	return true;
+}
+
 bool AdapterVk::IsInitialized() const
 {
-	// the command pool is initialized as last in the initialization process,
-	// so if we have a valid command pool, we know the initialization has already succeeded in the past
-	return mCommandPool != VK_NULL_HANDLE;
+	// the descriptor pool is initialized as last in the initialization process,
+	// so if we have a valid descriptor pool, we know the initialization has already succeeded in the past
+	return mDescriptorPool != VK_NULL_HANDLE;
 }
 
 bool AdapterVk::Init()
 {
+	static const char* const kIncludePaths[] = {
+		"src"
+	};
+
+	static const slang::PreprocessorMacroDesc kPreprocessorMacros[] =
+	{
+		{ "__SLANG__", "1" }
+	};
+
 	// 0. Check if already initialized
 	if (IsInitialized())
 		return true;
 
-	// 1. Create Instance
+	// 1. Initialize Slang
+	if (slang::createGlobalSession(mSlangGlobalSession.writeRef()) != SLANG_OK)
+	{
+		std::cerr << "AdapterVk::Init() - Failed to create Slang global session!" << std::endl;
+		return false;
+	}
+
+	slang::TargetDesc targetDesc;
+	targetDesc.format = SLANG_SPIRV;
+	targetDesc.profile = mSlangGlobalSession->findProfile("glsl_460"); // spirv_1_5
+	targetDesc.flags = SLANG_TARGET_FLAG_GENERATE_SPIRV_DIRECTLY;
+
+	slang::SessionDesc sessionDesc;
+	sessionDesc.targets = &targetDesc;
+	sessionDesc.targetCount = 1;
+	sessionDesc.searchPaths = kIncludePaths;
+	sessionDesc.searchPathCount = SLANG_COUNT_OF(kIncludePaths);
+	sessionDesc.preprocessorMacros = kPreprocessorMacros;
+	sessionDesc.preprocessorMacroCount = SLANG_COUNT_OF(kPreprocessorMacros);
+
+	if (mSlangGlobalSession->createSession(sessionDesc, mSlangSession.writeRef()) != SLANG_OK)
+	{
+		std::cerr << "AdapterVk::Init() - Failed to create Slang session!" << std::endl;
+		return false;
+	}
+
+	// 2. Create Instance
 	VkApplicationInfo appInfo;
 	appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
 	appInfo.pNext = nullptr;
@@ -349,7 +537,7 @@ bool AdapterVk::Init()
 		return false;
 	}
 
-	// 2. Pick Physical Device
+	// 3. Pick Physical Device
 	uint32_t deviceCount = 0;
 	if (vkEnumeratePhysicalDevices(mInstance, &deviceCount, nullptr) != VK_SUCCESS)
 	{
@@ -370,7 +558,7 @@ bool AdapterVk::Init()
 	VkPhysicalDeviceFeatures deviceFeatures;
 	vkGetPhysicalDeviceFeatures(mPhysicalDevice, &deviceFeatures);
 
-	// 3. Find Compute Queue Family
+	// 4. Find Compute Queue Family
 	uint32_t queueFamilyCount = 0;
 	vkGetPhysicalDeviceQueueFamilyProperties(mPhysicalDevice, &queueFamilyCount, nullptr);
 	std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
@@ -392,7 +580,7 @@ bool AdapterVk::Init()
 		return false;
 	}
 
-	// 4. Create Logical Device
+	// 5. Create Logical Device
 	float queuePriority = 1.0f;
 	VkDeviceQueueCreateInfo queueCreateInfo;
 	queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -421,16 +609,37 @@ bool AdapterVk::Init()
 
 	vkGetDeviceQueue(mDevice, computeQueueFamilyIndex, 0, &mComputeQueue);
 
-	// 5. Create Command Pool
-	VkCommandPoolCreateInfo poolInfo;
-	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-	poolInfo.pNext = nullptr;
-	poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-	poolInfo.queueFamilyIndex = computeQueueFamilyIndex;
+	// 6. Create Command Pool
+	VkCommandPoolCreateInfo commandPoolInfo;
+	commandPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	commandPoolInfo.pNext = nullptr;
+	commandPoolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+	commandPoolInfo.queueFamilyIndex = computeQueueFamilyIndex;
 
-	if (vkCreateCommandPool(mDevice, &poolInfo, nullptr, &mCommandPool) != VK_SUCCESS)
+	if (vkCreateCommandPool(mDevice, &commandPoolInfo, nullptr, &mCommandPool) != VK_SUCCESS)
 	{
 		std::cerr << "AdapterVk::Init() - Failed to create command pool!" << std::endl;
+		return false;
+	}
+
+	// 7. Create Descriptor Pool
+	const VkDescriptorPoolSize poolSizes[] =
+	{
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000 },
+	};
+
+	VkDescriptorPoolCreateInfo descriptorPoolInfo;
+	descriptorPoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	descriptorPoolInfo.pNext = nullptr;
+	descriptorPoolInfo.flags = 0;
+	descriptorPoolInfo.maxSets = 128;
+	descriptorPoolInfo.poolSizeCount = 2;
+	descriptorPoolInfo.pPoolSizes = poolSizes;
+
+	if (vkCreateDescriptorPool(mDevice, &descriptorPoolInfo, nullptr, &mDescriptorPool) != VK_SUCCESS)
+	{
+		std::cerr << "AdapterVk::Init() - Failed to create descriptor pool!" << std::endl;
 		return false;
 	}
 

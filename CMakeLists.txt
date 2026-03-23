@@ -15,6 +15,8 @@ else()
 endif()
 
 # --- COMMON EXECUTABLE ---
+include(cmake/CPM.cmake)
+
 set(HEADERS
 	src/core/global.h
 	src/core/meta.h
@@ -93,8 +95,6 @@ if (BUILD_METAL_ADAPTER)
 	)
 
 	# add dependencies
-	include(cmake/CPM.cmake)
-
 	CPMAddPackage(
 		NAME     metal-cpp
 		URL      http://github.com/bkaradzic/metal-cpp/archive/refs/heads/metal-cpp_26.tar.gz
@@ -136,4 +136,14 @@ if (BUILD_VULKAN_ADAPTER)
 	else()
 		message(FATAL_ERROR "Vulkan not found! BUILD_VULKAN_ADAPTER is enabled but Vulkan SDK is missing.")
 	endif()
+
+	set(SLANG_DIR "D:/programovanie/slang")
+	target_include_directories(${PROJECT_NAME} PRIVATE "${SLANG_DIR}/include")
+	target_link_libraries(${PROJECT_NAME} PRIVATE "${SLANG_DIR}/lib/slang.lib")
+
+	# copy slang.dll to binary dir for execution
+	add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+		"${SLANG_DIR}/bin/slang.dll"
+		$<TARGET_FILE_DIR:${PROJECT_NAME}>)
 endif()
