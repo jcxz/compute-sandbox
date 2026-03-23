@@ -116,6 +116,7 @@ endif()
 if (BUILD_VULKAN_ADAPTER)
 	set(HEADERS_VULKAN
 		src/gpu/vulkan/adapter_vk.h
+		src/gpu/vulkan/vk.h
 	)
 
 	set(SOURCES_VULKAN

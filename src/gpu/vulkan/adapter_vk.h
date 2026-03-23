@@ -2,15 +2,45 @@
 
 #include "gpu/gpu.h"
 #include "gpu/adapter.h"
+#include "gpu/vulkan/vk.h"
 
 #include <memory>
+#include <unordered_map>
+#include <vector>
+
+
 
 namespace gpu
 {
 
 class AdapterVk final : public IAdapter
 {
+	struct KernelInfo
+	{
+		// TODO: Fields for VkPipeline, VkPipelineLayout, VkDescriptorSetLayout, etc.
+		VkPipeline pipeline = VK_NULL_HANDLE;
+		VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+	};
+
+	struct Allocation
+	{
+		AdapterVk* pAdapter = nullptr;
+		VkBuffer buffer = VK_NULL_HANDLE;
+		VkDeviceMemory memory = VK_NULL_HANDLE;
+		void* ptr = nullptr;
+
+		~Allocation()
+		{
+			if (ptr)
+				vkUnmapMemory(pAdapter->mDevice, memory);
+			vkDestroyBuffer(pAdapter->mDevice, buffer, nullptr);
+			vkFreeMemory(pAdapter->mDevice, memory, nullptr);
+		}
+	};
+
 public:
+	virtual ~AdapterVk();
+
 	virtual void* Alloc(const size_t size, const AllocationMode mode) override final;
 
 	virtual void Free(void* const ptr) override final;
@@ -30,7 +60,11 @@ public:
 	}
 
 private:
+	uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) const;
+	bool IsInitialized() const;
 	bool Init();
+
+	const KernelInfo* RequestKernel(const uint32_t id);
 
 private:
 	AdapterVk() = default;
@@ -40,7 +74,22 @@ private:
 	AdapterVk& operator=(const AdapterVk& ) = delete;
 
 private:
-	// TODO: Add Vulkan-specific handles (VkInstance, VkDevice, VkCommandQueue, etc.)
+	//!
+	VkInstance mInstance = VK_NULL_HANDLE;
+	//! Vulkan physical device
+	VkPhysicalDevice mPhysicalDevice = VK_NULL_HANDLE;
+	//! Vulkan logical device through which all GPU interaction happens
+	VkDevice mDevice = VK_NULL_HANDLE;
+	//! command queue for submittintg compute operations
+	VkQueue mComputeQueue = VK_NULL_HANDLE;
+	//! command pool for creating command buffers
+	VkCommandPool mCommandPool = VK_NULL_HANDLE;
+	//! Descriptor pool for allocating descriptor sets per kernel execution
+	VkDescriptorPool mDescriptorPool = VK_NULL_HANDLE;
+	//! cache of precompiled pipelines ready to be used for starting a kernel
+	std::vector<KernelInfo> mKernels;
+	//! We treat the mapped pointer (or a dummy pointer if not mapped) as the allocation ID returned to the user
+	std::unordered_map<void*, Allocation> mAllocations;
 };
 
 extern IAdapter* CreateVulkanAdapter();

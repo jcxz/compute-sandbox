@@ -66,7 +66,11 @@ static void GenerateCheckerboard(uint8_t* data, const uint32_t w, const uint32_t
 
 bool testInvert()
 {
-	InitializeGpu();
+	if (!InitializeGpu())
+	{
+		std::cerr << "Failed to initialize GPU" << std::endl;
+		return false;
+	}
 
 	// Create buffers
 	const size_t W = 8192;
