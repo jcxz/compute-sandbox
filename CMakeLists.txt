@@ -5,12 +5,16 @@ project(${PROJECT_NAME})
 
 set(CMAKE_CXX_STANDARD 17)
 
+# --- CONFIGURATION OPTIONS ---
 if(APPLE)
 	option(BUILD_METAL_ADAPTER "Build Metal adapter" ON)
+	option(BUILD_VULKAN_ADAPTER "Build Vulkan adapter" OFF)
 else()
 	option(BUILD_METAL_ADAPTER "Build Metal adapter" OFF)
+	option(BUILD_VULKAN_ADAPTER "Build Vulkan adapter" ON)
 endif()
 
+# --- COMMON EXECUTABLE ---
 set(HEADERS
 	src/core/global.h
 	src/core/meta.h
@@ -26,11 +30,6 @@ set(HEADERS
 	src/tests/invert/invert.h
 )
 
-set(HEADERS_METAL
-	src/gpu/metal/adapter_mtl.h
-	src/gpu/metal/mtl.h
-)
-
 set(SOURCES
 	src/core/reflection.cpp
 	src/gpu/gpu.cpp
@@ -38,46 +37,60 @@ set(SOURCES
 	src/main.cpp
 )
 
-set(SOURCES_METAL
-	src/gpu/metal/adapter_mtl.cpp
-	src/gpu/metal/mtl.cpp
-)
-
-set(METAL_SHADERS
-	src/tests/invert/invert.metal
-)
-
 set(SLANG_SHADERS
 	src/tests/invert/invert.slang
 )
 
-set(GENERATED_METAL_SHADERS)
+add_executable(${PROJECT_NAME} ${HEADERS} ${SOURCES} ${SLANG_SHADERS})
+target_include_directories(${PROJECT_NAME} PRIVATE src)
 
-foreach(SLANG ${SLANG_SHADERS})
-	add_custom_command(
-		OUTPUT "${CMAKE_BINARY_DIR}/shaders/${SLANG}.metal"
-		COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tools/slangc"
-			"${CMAKE_CURRENT_SOURCE_DIR}/${SLANG}"
-			-o "${CMAKE_BINARY_DIR}/shaders/${SLANG}.metal"
-			-profile glsl_460
-			-target metal
-			-depfile "${CMAKE_BINARY_DIR}/shaders/${SLANG}.d"
-			-I "${CMAKE_CURRENT_SOURCE_DIR}/src"
-			-D__SLANG__=1
-		DEPENDS ${SLANG}
-		DEPFILE "${CMAKE_BINARY_DIR}/shaders/${SLANG}.d" # to make sure that the shader recompiles when only its includes change
-		WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
-		COMMENT "Slang → Metal: ${CMAKE_BINARY_DIR}/shaders/${SLANG}.metal")
-	list(APPEND GENERATED_METAL_SHADERS "${CMAKE_BINARY_DIR}/shaders/${SLANG}.metal")
-endforeach()
-
+# --- METAL ADAPTER ---
 if (BUILD_METAL_ADAPTER)
+	set(HEADERS_METAL
+		src/gpu/metal/adapter_mtl.h
+		src/gpu/metal/mtl.h
+	)
+
+	set(SOURCES_METAL
+		src/gpu/metal/adapter_mtl.cpp
+		src/gpu/metal/mtl.cpp
+	)
+
+	set(METAL_SHADERS
+		src/tests/invert/invert.metal
+	)
+
+	set(GENERATED_METAL_SHADERS)
+
+	foreach(SLANG ${SLANG_SHADERS})
+		add_custom_command(
+			OUTPUT "${CMAKE_BINARY_DIR}/shaders/${SLANG}.metal"
+			COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tools/slangc"
+				"${CMAKE_CURRENT_SOURCE_DIR}/${SLANG}"
+				-o "${CMAKE_BINARY_DIR}/shaders/${SLANG}.metal"
+				-profile glsl_460
+				-target metal
+				-depfile "${CMAKE_BINARY_DIR}/shaders/${SLANG}.d"
+				-I "${CMAKE_CURRENT_SOURCE_DIR}/src"
+				-D__SLANG__=1
+			DEPENDS ${SLANG}
+			DEPFILE "${CMAKE_BINARY_DIR}/shaders/${SLANG}.d" # to make sure that the shader recompiles when only its includes change
+			WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+			COMMENT "Slang → Metal: ${CMAKE_BINARY_DIR}/shaders/${SLANG}.metal")
+		list(APPEND GENERATED_METAL_SHADERS "${CMAKE_BINARY_DIR}/shaders/${SLANG}.metal")
+	endforeach()
+
 	set_source_files_properties(
 		${METAL_SHADERS} ${GENERATED_METAL_SHADERS} PROPERTIES
 		LANGUAGE METAL
 		COMPILE_OPTIONS "-Isrc")
 
-	add_executable(${PROJECT_NAME} ${HEADERS} ${HEADERS_METAL} ${SOURCES} ${SOURCES_METAL} ${METAL_SHADERS} ${GENERATED_METAL_SHADERS} ${SLANG_SHADERS})
+	target_sources(${PROJECT_NAME} PRIVATE
+		${HEADERS_METAL}
+		${SOURCES_METAL}
+		${METAL_SHADERS}
+		${GENERATED_METAL_SHADERS}
+	)
 
 	# add dependencies
 	include(cmake/CPM.cmake)
@@ -92,15 +105,35 @@ if (BUILD_METAL_ADAPTER)
 
 	target_compile_definitions(${PROJECT_NAME} PRIVATE "BUILD_METAL_ADAPTER")
 
-	target_link_libraries(${PROJECT_NAME}
+	target_link_libraries(${PROJECT_NAME} PRIVATE
 		"-framework Foundation"
 		"-framework QuartzCore"
 		"-framework Metal"
 	)
-else()
-	add_executable(${PROJECT_NAME} ${HEADERS} ${SOURCES} ${SLANG_SHADERS})
 endif()
 
-target_include_directories(${PROJECT_NAME} PRIVATE
-	src
-)
+# --- VULKAN ADAPTER ---
+if (BUILD_VULKAN_ADAPTER)
+	set(HEADERS_VULKAN
+		src/gpu/vulkan/adapter_vk.h
+	)
+
+	set(SOURCES_VULKAN
+		src/gpu/vulkan/adapter_vk.cpp
+	)
+
+	target_sources(${PROJECT_NAME} PRIVATE
+		${HEADERS_VULKAN}
+		${SOURCES_VULKAN}
+	)
+
+	find_package(Vulkan)
+	if(Vulkan_FOUND)
+		target_compile_definitions(${PROJECT_NAME} PRIVATE "BUILD_VULKAN_ADAPTER")
+		target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan::Vulkan)
+	else()
+		message(WARNING "Vulkan not found! BUILD_VULKAN_ADAPTER is enabled but Vulkan SDK is missing.")
+		# Still define it so our stubs compile
+		target_compile_definitions(${PROJECT_NAME} PRIVATE "BUILD_VULKAN_ADAPTER")
+	endif()
+endif()

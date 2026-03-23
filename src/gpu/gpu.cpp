@@ -9,6 +9,7 @@ namespace gpu
 {
 
 extern IAdapter* CreateMetalAdapter();
+extern IAdapter* CreateVulkanAdapter();
 
 }
 
@@ -23,6 +24,9 @@ bool InitializeGpu(const GpuAdapterType type)
 			// pick the first enabled Adapter whichever that may be
 #ifdef BUILD_METAL_ADAPTER
 		case GpuAdapterType::Metal: gAdapter = gpu::CreateMetalAdapter(); break;
+#endif
+#ifdef BUILD_VULKAN_ADAPTER
+		case GpuAdapterType::Vulkan: gAdapter = gpu::CreateVulkanAdapter(); break;
 #endif
 		default:
 			break;
