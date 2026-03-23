@@ -128,13 +128,12 @@ if (BUILD_VULKAN_ADAPTER)
 		${SOURCES_VULKAN}
 	)
 
+	target_compile_definitions(${PROJECT_NAME} PRIVATE "BUILD_VULKAN_ADAPTER")
+
 	find_package(Vulkan)
 	if(Vulkan_FOUND)
-		target_compile_definitions(${PROJECT_NAME} PRIVATE "BUILD_VULKAN_ADAPTER")
 		target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan::Vulkan)
 	else()
-		message(WARNING "Vulkan not found! BUILD_VULKAN_ADAPTER is enabled but Vulkan SDK is missing.")
-		# Still define it so our stubs compile
-		target_compile_definitions(${PROJECT_NAME} PRIVATE "BUILD_VULKAN_ADAPTER")
+		message(FATAL_ERROR "Vulkan not found! BUILD_VULKAN_ADAPTER is enabled but Vulkan SDK is missing.")
 	endif()
 endif()

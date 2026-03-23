@@ -18,8 +18,15 @@ class AdapterVk final : public IAdapter
 	struct KernelInfo
 	{
 		// TODO: Fields for VkPipeline, VkPipelineLayout, VkDescriptorSetLayout, etc.
+		AdapterVk* pAdapter = nullptr;
 		VkPipeline pipeline = VK_NULL_HANDLE;
 		VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+
+		~KernelInfo()
+		{
+			vkDestroyPipeline(pAdapter->mDevice, pipeline, nullptr);
+			vkDestroyPipelineLayout(pAdapter->mDevice, pipelineLayout, nullptr);
+		}
 	};
 
 	struct Allocation

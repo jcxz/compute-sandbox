@@ -1,5 +1,9 @@
 #include "gpu/vulkan/adapter_vk.h"
+#include "gpu/kernel_registry.h"
+#include "core/global.h"
 #include <iostream>
+#include <fstream>
+#include <vector>
 
 
 
@@ -9,6 +13,8 @@ namespace gpu
 AdapterVk::~AdapterVk()
 {
 	mAllocations.clear();
+
+	mKernels.clear();
 
 	if (mDescriptorPool)
 		vkDestroyDescriptorPool(mDevice, mDescriptorPool, nullptr);
@@ -121,10 +127,19 @@ bool AdapterVk::ExecuteKernel(
 	const void* const pArgs,
 	const refl::TypeMetaInfo* const pArgsInfo)
 {
-	// 1. Verify kernel ID
-	if (id >= mKernels.size())
+	// Initialize GPU if needed
+	if (!Init())
 	{
-		std::cerr << "AdapterVk::ExecuteKernel() - Invalid kernel ID: " << id << std::endl;
+		std::cerr << "Failed to initialize GPU" << std::endl;
+		return false;
+	}
+
+	// 1. Get/Build Pipeline
+	const KernelInfo* pKernel = RequestKernel(id);
+	if (pKernel == nullptr)
+	{
+		std::cerr << "AdapterVk::ExecuteKernel() - Failed to initialize GPU data for kernel "
+				  << KernelRegistry::GetInstance()->GetKernelName(id) << " (id: " << id << ")" << std::endl;
 		return false;
 	}
 
@@ -153,19 +168,11 @@ bool AdapterVk::ExecuteKernel(
 	vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
 	// 5. Bind Pipeline and Descriptor sets
-	const KernelInfo& kInfo = mKernels[id];
-	if (kInfo.pipeline != VK_NULL_HANDLE)
-	{
-		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, kInfo.pipeline);
-		// vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, kInfo.pipelineLayout, ...);
+	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pKernel->pipeline);
+	// vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pKernel->pipelineLayout, ...);
 
-		// 6. Dispatch
-		vkCmdDispatch(commandBuffer, nx, ny, nz);
-	}
-	else
-	{
-		std::cerr << "AdapterVk::ExecuteKernel() - Pipeline not generated (TODO: SPIRV loading)" << std::endl;
-	}
+	// 6. Dispatch
+	vkCmdDispatch(commandBuffer, nx, ny, nz);
 
 	vkEndCommandBuffer(commandBuffer);
 
@@ -204,6 +211,104 @@ uint32_t AdapterVk::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags pr
 		}
 	}
 	return -1;
+}
+
+const AdapterVk::KernelInfo* AdapterVk::RequestKernel(const uint32_t id)
+{
+	EM_ASSERT((mKernels.size() == KernelRegistry::GetInstance()->GetKernelCount()) && "Kernel registry size mismatch");
+
+	const std::string& kernelName = KernelRegistry::GetInstance()->GetKernelName(id);
+	if (kernelName.empty())
+	{
+		std::cerr << "Invalid kernel id " << id << std::endl;
+		return nullptr;
+	}
+
+	auto& kernel = mKernels[id];
+	if (kernel.pipeline == VK_NULL_HANDLE)
+	{
+		// Load the compiled SPIR-V shader module
+		std::string shaderPath = "shaders/" + kernelName + ".spv";
+		std::ifstream file(shaderPath, std::ios::ate | std::ios::binary);
+		if (!file.is_open())
+		{
+			std::cerr << "Failed to open kernel shader: " << shaderPath << std::endl;
+			return nullptr;
+		}
+
+		size_t fileSize = static_cast<size_t>(file.tellg());
+		std::vector<char> buffer(fileSize);
+		file.seekg(0);
+		file.read(buffer.data(), fileSize);
+		file.close();
+
+		VkShaderModuleCreateInfo createInfo;
+		createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+		createInfo.pNext = nullptr;
+		createInfo.flags = 0;
+		createInfo.codeSize = buffer.size();
+		createInfo.pCode = reinterpret_cast<const uint32_t*>(buffer.data());
+
+		VkShaderModule shaderModule;
+		if (vkCreateShaderModule(mDevice, &createInfo, nullptr, &shaderModule) != VK_SUCCESS)
+		{
+			std::cerr << "Failed to create shader module for " << kernelName << std::endl;
+			return nullptr;
+		}
+
+		VkPipelineShaderStageCreateInfo shaderStageInfo;
+		shaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		shaderStageInfo.pNext = nullptr;
+		shaderStageInfo.flags = 0;
+		shaderStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+		shaderStageInfo.module = shaderModule;
+		shaderStageInfo.pName = kernelName.c_str(); // Default entry point name from slang
+
+		// NOTE: Placeholder Pipeline Layout. Needs properly created VkDescriptorSetLayout from reflection.
+		VkPipelineLayoutCreateInfo pipelineLayoutInfo;
+		pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+		pipelineLayoutInfo.pNext = nullptr;
+		pipelineLayoutInfo.flags = 0;
+		pipelineLayoutInfo.setLayoutCount = 0;
+		pipelineLayoutInfo.pSetLayouts = nullptr;
+		pipelineLayoutInfo.pushConstantRangeCount = 0;
+		pipelineLayoutInfo.pPushConstantRanges = nullptr;
+
+		VkPipelineLayout pipelineLayout;
+		if (vkCreatePipelineLayout(mDevice, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS)
+		{
+			std::cerr << "Failed to create pipeline layout for " << kernelName << std::endl;
+			vkDestroyShaderModule(mDevice, shaderModule, nullptr);
+			return nullptr;
+		}
+
+		VkComputePipelineCreateInfo pipelineInfo;
+		pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+		pipelineInfo.pNext = nullptr;
+		pipelineInfo.flags = 0;
+		pipelineInfo.stage = shaderStageInfo;
+		pipelineInfo.layout = pipelineLayout;
+		pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
+		pipelineInfo.basePipelineIndex = -1;
+
+		VkPipeline pipeline;
+		if (vkCreateComputePipelines(mDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS)
+		{
+			std::cerr << "Failed to create compute pipeline for " << kernelName << std::endl;
+			vkDestroyPipelineLayout(mDevice, pipelineLayout, nullptr);
+			vkDestroyShaderModule(mDevice, shaderModule, nullptr);
+			return nullptr;
+		}
+
+		// we can destroy the shader module now that the pipeline is created
+		vkDestroyShaderModule(mDevice, shaderModule, nullptr);
+
+		// Cache successful pipeline build
+		kernel.pipelineLayout = pipelineLayout;
+		kernel.pipeline = pipeline;
+	}
+
+	return &kernel;
 }
 
 bool AdapterVk::IsInitialized() const
@@ -262,6 +367,9 @@ bool AdapterVk::Init()
 	// Simple heuristic: just pick the first one, could be enhanced to prefer discrete GPUs
 	mPhysicalDevice = devices[0];
 
+	VkPhysicalDeviceFeatures deviceFeatures;
+	vkGetPhysicalDeviceFeatures(mPhysicalDevice, &deviceFeatures);
+
 	// 3. Find Compute Queue Family
 	uint32_t queueFamilyCount = 0;
 	vkGetPhysicalDeviceQueueFamilyProperties(mPhysicalDevice, &queueFamilyCount, nullptr);
@@ -303,7 +411,7 @@ bool AdapterVk::Init()
 	deviceCreateInfo.ppEnabledLayerNames = nullptr;
 	deviceCreateInfo.enabledExtensionCount = 0;
 	deviceCreateInfo.ppEnabledExtensionNames = nullptr;
-	deviceCreateInfo.pEnabledFeatures = nullptr;
+	deviceCreateInfo.pEnabledFeatures = &deviceFeatures;   // lets enable all supported device features
 
 	if (vkCreateDevice(mPhysicalDevice, &deviceCreateInfo, nullptr, &mDevice) != VK_SUCCESS)
 	{
@@ -325,6 +433,12 @@ bool AdapterVk::Init()
 		std::cerr << "AdapterVk::Init() - Failed to create command pool!" << std::endl;
 		return false;
 	}
+
+	// ensure the cache is large enough for all kernels
+	// all CPU kernels have a static ID variable intialized via kernel registry
+	// before main is started, so at this point all kernels
+	// should be registered and this should be a valid code
+	mKernels.resize(KernelRegistry::GetInstance()->GetKernelCount());
 
 	return true;
 }
