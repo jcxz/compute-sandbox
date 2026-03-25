@@ -190,7 +190,7 @@ void* AdapterVk::Alloc(const size_t size, const AllocationMode mode)
 	// something unique.
 	void* ptr = (mode == AllocationMode::Shared) ? alloc.ptr : reinterpret_cast<void*>(alloc.deviceAddress);
 
-	mAllocations[ptr] = alloc;
+	mAllocations[ptr] = std::move(alloc);
 	return ptr;
 }
 

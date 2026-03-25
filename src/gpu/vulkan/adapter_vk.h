@@ -21,6 +21,60 @@ class AdapterVk final : public IAdapter
 	static_assert(sizeof(void*) == sizeof(uint64_t), "void* not the same size as uint64_t");
 
 private:
+	//! stores all the information about a single allocation made via Alloc()
+	struct Allocation
+	{
+		//! a back pointer to the adapter
+		AdapterVk* pAdapter = nullptr;
+		//! Vulkan buffer backing this allocation
+		VkBuffer buffer = VK_NULL_HANDLE;
+		//! Vulkan memory backing this allocation
+		VkDeviceMemory memory = VK_NULL_HANDLE;
+		//! the device address of the buffer
+		VkDeviceAddress deviceAddress = 0;
+		//! CPU mapped pointer to the buffer
+		void* ptr = nullptr;
+
+		Allocation() = default;
+		Allocation(const Allocation&) = default;
+		Allocation& operator=(const Allocation&) = default;
+
+		Allocation(Allocation&& other) noexcept
+			: pAdapter(other.pAdapter)
+			, buffer(other.buffer)
+			, memory(other.memory)
+			, deviceAddress(other.deviceAddress)
+			, ptr(other.ptr)
+		{
+			other.pAdapter = nullptr;
+			other.buffer = VK_NULL_HANDLE;
+			other.memory = VK_NULL_HANDLE;
+			other.deviceAddress = 0;
+			other.ptr = nullptr;
+		}
+
+		Allocation& operator=(Allocation&& other) noexcept
+		{
+			std::swap(pAdapter, other.pAdapter);
+			std::swap(buffer, other.buffer);
+			std::swap(memory, other.memory);
+			std::swap(deviceAddress, other.deviceAddress);
+			std::swap(ptr, other.ptr);
+			return *this;
+		}
+
+		~Allocation()
+		{
+			if (pAdapter)
+			{
+				if (ptr)
+					vkUnmapMemory(pAdapter->mDevice, memory);
+				vkDestroyBuffer(pAdapter->mDevice, buffer, nullptr);
+				vkFreeMemory(pAdapter->mDevice, memory, nullptr);
+			}
+		}
+	};
+
 	//! this structure contains reflection information about the kernel so that we know how to fill up the arguments buffer
 	// ! and setup the dispatch call
 	struct KernelReflectionInfo
@@ -79,28 +133,6 @@ private:
 				vkDestroyPipeline(pAdapter->mDevice, pipeline, nullptr);
 				vkDestroyPipelineLayout(pAdapter->mDevice, pipelineLayout, nullptr);
 			}
-		}
-	};
-
-	struct Allocation
-	{
-		//! a back pointer to the adapter
-		AdapterVk* pAdapter = nullptr;
-		//! Vulkan buffer backing this allocation
-		VkBuffer buffer = VK_NULL_HANDLE;
-		//! Vulkan memory backing this allocation
-		VkDeviceMemory memory = VK_NULL_HANDLE;
-		//! the device address of the buffer
-		VkDeviceAddress deviceAddress = 0;
-		//! CPU mapped pointer to the buffer
-		void* ptr = nullptr;
-
-		~Allocation()
-		{
-			if (ptr)
-				vkUnmapMemory(pAdapter->mDevice, memory);
-			vkDestroyBuffer(pAdapter->mDevice, buffer, nullptr);
-			vkFreeMemory(pAdapter->mDevice, memory, nullptr);
 		}
 	};
 
