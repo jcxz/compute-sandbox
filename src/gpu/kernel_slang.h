@@ -5,7 +5,7 @@
 #define MTL_CONSTANT
 #define MTL_DEVICE
 #define DECL_KERNEL(ITYPE, NAME, ARGS) \
-	[[shader("compute")]] void NAME(ITYPE index : SV_DispatchThreadID, uniform ConstantBuffer<ARGS> args)
+	[[shader("compute")]] void NAME(ITYPE index : SV_DispatchThreadID, uniform ARGS* args)
 
 #define DECL_KERNEL_ARGS_BEGIN(NAME) struct NAME {
 #define DECL_KERNEL_ARGS_FIELD_(TYPE, NAME, ARRAY) TYPE NAME ARRAY;

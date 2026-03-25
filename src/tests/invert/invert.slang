@@ -1,1 +1,1 @@
-//#include "kernels/invert.h"
+#include "tests/invert/invert.h"
