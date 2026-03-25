@@ -44,19 +44,6 @@ private:
 		AdapterVk* pAdapter = nullptr;
 		VkPipeline pipeline = VK_NULL_HANDLE;
 		VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-		// TODO: descriptor set layout ani descriptor sety nepotrebujem,
-		// lebo ocakavam len jeden custom argument -> ktorym je pointer na Args buffer,
-		// ktory mi slang prelozi ako push constants
-		// Ale pre vseobecny pripad pripad, ked by som chcel mat aj textury by som mozno
-		// mohol nechal descriptor set layouty
-		// zaroven budem musiet pridat pointer na reflexiu, lebo budem musiet
-		// nieco ako EncodeKernelArguments v AdapterMtl, cize budem musiet v runtime zakazdym preliezt
-		// cez vsetky vstupne argumenty a zistit kam, na ake offsety ich mam napchat
-		// este by som tu mohol pridat aj threadGroupSize z kernelu, aby som vedel ako mam nasetupovat dispatch
-		std::vector<VkDescriptorSetLayout> descriptorSetLayouts;
-		//! cached descriptor sets (in our case we will always have only one descriptor set with one binding,
-		//! because at the moment we only allow kernels with one argument that is a structure of scalars and pointers)
-		std::vector<VkDescriptorSet> descriptorSets;
 		//! buffer for scalar kernel arguments
 		VkBuffer buffer = VK_NULL_HANDLE;
 		//! Vulkan memory backing the buffer
@@ -68,21 +55,15 @@ private:
 		//! Reflection information about the kernel
 		KernelReflectionInfo reflectionInfo;
 
-		//KernelInfo() = default;
-		//KernelInfo(KernelInfo&& other);
-		//KernelInfo& operator=(KernelInfo&& other);
-
 		void Swap(KernelInfo& other)
 		{
 			std::swap(pAdapter, other.pAdapter);
 			std::swap(pipeline, other.pipeline);
 			std::swap(pipelineLayout, other.pipelineLayout);
-			std::swap(descriptorSetLayouts, other.descriptorSetLayouts);
-			std::swap(descriptorSets, other.descriptorSets);
 			std::swap(buffer, other.buffer);
 			std::swap(memory, other.memory);
 			std::swap(ptr, other.ptr);
-			std::swap(reflectionInfo, other.reflectionInfo);
+			reflectionInfo.Swap(other.reflectionInfo);
 		}
 
 		~KernelInfo()
@@ -94,13 +75,9 @@ private:
 					vkUnmapMemory(pAdapter->mDevice, memory);
 				vkDestroyBuffer(pAdapter->mDevice, buffer, nullptr);
 				vkFreeMemory(pAdapter->mDevice, memory, nullptr);
-				// free descriptor sets
-				//vkFreeDescriptorSets(pAdapter->mDevice, pAdapter->mDescriptorPool, descriptorSets.size(), descriptorSets.data());
 				// free the all the layout descriptors
 				vkDestroyPipeline(pAdapter->mDevice, pipeline, nullptr);
 				vkDestroyPipelineLayout(pAdapter->mDevice, pipelineLayout, nullptr);
-				for (VkDescriptorSetLayout layout : descriptorSetLayouts)
-					vkDestroyDescriptorSetLayout(pAdapter->mDevice, layout, nullptr);
 			}
 		}
 	};
@@ -145,21 +122,18 @@ public:
 	static AdapterVk* CreateVulkanAdapter(const bool debugMode = true)
 	{
 		std::unique_ptr<AdapterVk> pAdapter(new AdapterVk);
-		pAdapter->mDebugMode = debugMode;
-		return pAdapter->Init() ? pAdapter.release() : nullptr;
+		return pAdapter->Init(debugMode) ? pAdapter.release() : nullptr;
 	}
 
 private:
 	uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) const;
 	bool IsInitialized() const;
-	bool Init();
+	bool Init(const bool debugMode);
 	const KernelInfo* RequestKernel(const uint32_t id);
-	bool BuildSlangProgram(const std::string& kernelName, slang::IComponentType** ppProgram);
+	//! compiles shader program
+	bool BuildSlangProgram(const std::string& kernelName, slang::IComponentType** ppProgram, VkShaderModule& pShaderModule);
 	//! validates shader and builds reflection info
 	bool ReflectSlangProgram(slang::IComponentType* pProgram, KernelReflectionInfo& reflectionInfo);
-	VkShaderModule CreateShaderModule(slang::IComponentType* pProgram);
-	VkPipelineLayout CreatePipelineLayout(slang::IComponentType* pProgram);
-	bool CreateDescriptorSetLayouts(slang::IComponentType* pProgram, std::vector<VkDescriptorSetLayout>& descriptorSetLayouts);
 
 private:
 	AdapterVk() = default;
@@ -181,6 +155,8 @@ private:
 	VkDevice mDevice = VK_NULL_HANDLE;
 	//! command queue for submittintg compute operations
 	VkQueue mComputeQueue = VK_NULL_HANDLE;
+	//! pipeline cache to speed up creating compute pipelines for kernels
+	VkPipelineCache mPipelineCache = VK_NULL_HANDLE;
 	//! command pool for creating command buffers
 	VkCommandPool mCommandPool = VK_NULL_HANDLE;
 	//! Descriptor pool for allocating descriptor sets per kernel execution
@@ -191,8 +167,6 @@ private:
 	std::vector<KernelInfo> mKernels;
 	//! We treat the mapped pointer (or a dummy pointer if not mapped) as the allocation ID returned to the user
 	std::unordered_map<void*, Allocation> mAllocations;
-	//! whether debugging is enabled
-	bool mDebugMode = false;
 };
 
 extern IAdapter* CreateVulkanAdapter();
