@@ -20,15 +20,19 @@ static void ReflectOffsets(slang::TypeLayoutReflection* pTypeLayout, size_t base
 		slang::TypeLayoutReflection* pFieldType = pField->getTypeLayout();
 		if (pFieldType->getKind() == slang::TypeReflection::Kind::Struct)
 		{
-			ReflectOffsets(pFieldType, baseOffset, offsets);
+			ReflectOffsets(pFieldType, baseOffset + offsets.back(), offsets);
 		}
 	}
 }
 
-static void ReflectOffsets(slang::TypeLayoutReflection* pTypeLayout, std::vector<size_t>& offsets)
+static void ReflectOffsets(slang::TypeLayoutReflection* pTypeLayout, std::vector<size_t>& offsets, size_t& size)
 {
-	std::cout << __FUNCTION__ << std::endl;
-	std::cout << "varname=" << (pTypeLayout->getName() ? pTypeLayout->getName() : "null") << " kind=" << (int)pTypeLayout->getKind() << " name=" << (pTypeLayout->getName() ? pTypeLayout->getName() : "null") << std::endl;
+	std::cout << __FUNCTION__
+			  << " name=" << (pTypeLayout->getName() ? pTypeLayout->getName() : "null")
+			  << " kind=" << (int)pTypeLayout->getKind()
+			  << " size=" << pTypeLayout->getSize() << std::endl;
+
+	size = pTypeLayout->getSize();
 	if (pTypeLayout->getKind() == slang::TypeReflection::Kind::Struct)
 	{
 		ReflectOffsets(pTypeLayout, 0, offsets);
@@ -220,7 +224,14 @@ bool AdapterVk::ExecuteKernel(
 		return false;
 	}
 
-	// 4. Allocate a command buffer
+	// 2. fill the arguments GPU buffer with kernel's arguments
+	if (!EncodeKernelArguments(pKernel, static_cast<const uint8_t*>(pArgs), pArgsInfo))
+	{
+		std::cerr << "AdapterVk::ExecuteKernel() - Failed to encode kernel arguments!" << std::endl;
+		return false;
+	}
+
+	// 3. Allocate a command buffer
 	VkCommandBufferAllocateInfo commandBufferAllocInfo;
 	commandBufferAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	commandBufferAllocInfo.pNext = nullptr;
@@ -235,7 +246,7 @@ bool AdapterVk::ExecuteKernel(
 		return false;
 	}
 
-	// 5. Begin recording
+	// 4. Begin recording
 	VkCommandBufferBeginInfo beginInfo;
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	beginInfo.pNext = nullptr;
@@ -244,16 +255,16 @@ bool AdapterVk::ExecuteKernel(
 
 	vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
-	// 6. Bind Pipeline and push constants
+	// 5. Bind Pipeline and push constants
 	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pKernel->pipeline);
-	vkCmdPushConstants(commandBuffer, pKernel->pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(VkDeviceAddress), &pKernel->deviceAddress);
+	vkCmdPushConstants(commandBuffer, pKernel->pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(VkDeviceAddress), &pKernel->argsBufferDeviceAddress);
 
-	// 7. Dispatch
+	// 6. Dispatch
 	vkCmdDispatch(commandBuffer, nx, ny, nz);
 
 	vkEndCommandBuffer(commandBuffer);
 
-	// 8. Submit
+	// 7. Submit
 	VkSubmitInfo submitInfo;
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 	submitInfo.pNext = nullptr;
@@ -267,10 +278,10 @@ bool AdapterVk::ExecuteKernel(
 
 	vkQueueSubmit(mComputeQueue, 1, &submitInfo, VK_NULL_HANDLE);
 
-	// 9. Wait (Synchronous for now)
+	// 8. Wait (Synchronous for now)
 	vkQueueWaitIdle(mComputeQueue);
 
-	// 10. Cleanup
+	// 9. Cleanup
 	vkFreeCommandBuffers(mDevice, mCommandPool, 1, &commandBuffer);
 
 	return true;
@@ -319,6 +330,7 @@ const AdapterVk::KernelInfo* AdapterVk::RequestKernel(const uint32_t id)
 		if (!ReflectSlangProgram(pProgram, kernelInfo.reflectionInfo))
 		{
 			std::cerr << "Failed to reflect " << kernelName << std::endl;
+			vkDestroyShaderModule(mDevice, shaderModule, nullptr);
 			return nullptr;
 		}
 
@@ -342,6 +354,7 @@ const AdapterVk::KernelInfo* AdapterVk::RequestKernel(const uint32_t id)
 			if (res != VK_SUCCESS)
 			{
 				std::cerr << "Failed to create VkPipelineLayout: " << res << std::endl;
+				vkDestroyShaderModule(mDevice, shaderModule, nullptr);
 				return VK_NULL_HANDLE;
 			}
 		}
@@ -372,6 +385,15 @@ const AdapterVk::KernelInfo* AdapterVk::RequestKernel(const uint32_t id)
 		}
 
 		vkDestroyShaderModule(mDevice, shaderModule, nullptr);
+
+		kernelInfo.pArgsBuffer = Alloc(kernelInfo.reflectionInfo.argsBufferSize, AllocationMode::Shared);
+		if (kernelInfo.pArgsBuffer == nullptr)
+		{
+			std::cerr << "Failed to preallocate memory for arguments of kernel " << kernelName << std::endl;
+			return nullptr;
+		}
+
+		kernelInfo.argsBufferDeviceAddress = GetAllocation(kernelInfo.pArgsBuffer)->deviceAddress;
 
 		kernel.Swap(kernelInfo);
 	}
@@ -495,7 +517,7 @@ bool AdapterVk::ReflectSlangProgram(slang::IComponentType* pProgram, KernelRefle
 				}
 				offset = pParam->getOffset(slang::ParameterCategory::Uniform);
 				size = pParamType->getSize(slang::ParameterCategory::Uniform);
-				ReflectOffsets(pParamType->getElementTypeLayout(), reflectionInfo.offsets);
+				ReflectOffsets(pParamType->getElementTypeLayout(), reflectionInfo.offsets, reflectionInfo.argsBufferSize);
 				break;
 
 			case slang::ParameterCategory::None:
@@ -805,6 +827,48 @@ bool AdapterVk::Init(const bool debugMode)
 	mKernels.resize(KernelRegistry::GetInstance()->GetKernelCount());
 
 	return true;
+}
+
+bool AdapterVk::EncodeKernelArguments(const KernelInfo* const pKernel, const uint8_t* const pArgs, const refl::TypeMetaInfo* const pArgsInfo)
+{
+	for (const refl::TypeMetaInfo* info = pArgsInfo; info; info = info->next)
+	{
+		switch (info->type)
+		{
+			case refl::TypeTag::Structure:
+				if (EncodeKernelArguments(pKernel, pArgs, info->fields))
+					break;
+				else
+					return false;
+
+			case refl::TypeTag::Pointer:
+			case refl::TypeTag::ConstPointer:
+				if (const Allocation* pAlloc = GetAllocation(*reinterpret_cast<void * const *>(pArgs + info->offset)))
+				{
+					std::memcpy(static_cast<uint8_t*>(pKernel->pArgsBuffer) + pKernel->reflectionInfo.offsets[info->location], &pAlloc->deviceAddress, sizeof(VkDeviceAddress));
+					break;
+				}
+				else
+					return false;
+
+			default:
+				std::memcpy(static_cast<uint8_t*>(pKernel->pArgsBuffer) + pKernel->reflectionInfo.offsets[info->location], pArgs + info->offset, info->size);
+				break;
+		}
+	}
+
+	return true;
+}
+
+const AdapterVk::Allocation* AdapterVk::GetAllocation(void* const ptr) const
+{
+	const auto it = mAllocations.find(ptr);
+	if (it == mAllocations.end())
+	{
+		std::cerr << "Invalid GPU memory pointer. There is no GPU buffer mapped to address " << ptr << std::endl;
+		return nullptr;
+	}
+	return &it->second;
 }
 
 extern IAdapter* CreateVulkanAdapter()

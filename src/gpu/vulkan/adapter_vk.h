@@ -82,6 +82,8 @@ private:
 		//! thread group size, so that we know how to configure the dispatch command
 		//! This can be made configurable from shader
 		SlangUInt threadGroupSize[3];
+		//! size of the arguments buffer
+		size_t argsBufferSize = 0;
 		//! Layout of the kernel arguments, so that we know how to fill them up
 		std::vector<size_t> offsets;
 
@@ -95,28 +97,25 @@ private:
 	//! this structure contains cached information about the kernel
 	struct KernelInfo
 	{
+		//! a back pointer to the adapter to be able to access mDevice
 		AdapterVk* pAdapter = nullptr;
+		//! GPU allocated memory for the kernel arguments
+		void* pArgsBuffer = nullptr;
+		//! Vulkan device address of the kernel arguments buffer
+		VkDeviceAddress argsBufferDeviceAddress = 0;
+		//! Vulkan handle to the compute pipeline created for this kernel
 		VkPipeline pipeline = VK_NULL_HANDLE;
+		//! Vulkan handle to the pipeline layout created for this kernel
 		VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-		//! buffer for scalar kernel arguments
-		VkBuffer buffer = VK_NULL_HANDLE;
-		//! Vulkan memory backing the buffer
-		VkDeviceMemory memory = VK_NULL_HANDLE;
-		//! the device address of the buffer
-		VkDeviceAddress deviceAddress = 0;
-		//! CPU mapped pointer for the buffer
-		void* ptr = nullptr;
 		//! Reflection information about the kernel
 		KernelReflectionInfo reflectionInfo;
 
 		void Swap(KernelInfo& other)
 		{
 			std::swap(pAdapter, other.pAdapter);
+			std::swap(pArgsBuffer, other.pArgsBuffer);
 			std::swap(pipeline, other.pipeline);
 			std::swap(pipelineLayout, other.pipelineLayout);
-			std::swap(buffer, other.buffer);
-			std::swap(memory, other.memory);
-			std::swap(ptr, other.ptr);
 			reflectionInfo.Swap(other.reflectionInfo);
 		}
 
@@ -125,10 +124,7 @@ private:
 			if (pAdapter)
 			{
 				// free the buffer resource
-				if (ptr)
-					vkUnmapMemory(pAdapter->mDevice, memory);
-				vkDestroyBuffer(pAdapter->mDevice, buffer, nullptr);
-				vkFreeMemory(pAdapter->mDevice, memory, nullptr);
+				pAdapter->Free(pArgsBuffer);
 				// free the all the layout descriptors
 				vkDestroyPipeline(pAdapter->mDevice, pipeline, nullptr);
 				vkDestroyPipelineLayout(pAdapter->mDevice, pipelineLayout, nullptr);
@@ -166,6 +162,10 @@ private:
 	bool BuildSlangProgram(const std::string& kernelName, slang::IComponentType** ppProgram, VkShaderModule& pShaderModule);
 	//! validates shader and builds reflection info
 	bool ReflectSlangProgram(slang::IComponentType* pProgram, KernelReflectionInfo& reflectionInfo);
+	//! fills the arguments buffer with the arguments
+	bool EncodeKernelArguments(const KernelInfo* const pKernel, const uint8_t* const pArgs, const refl::TypeMetaInfo* const pArgsInfo);
+	//! returns the buffer associated with the given pointer
+	const Allocation* GetAllocation(void* const ptr) const;
 
 private:
 	AdapterVk() = default;
