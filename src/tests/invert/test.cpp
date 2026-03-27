@@ -116,6 +116,9 @@ bool testInvert()
 			if (cpu[i] != gpu[i])
 			{
 				std::cerr << "Invalid results, cpu and gpu differ at element [" << x << ", " << y << "]: " << (uint32_t)cpu[i] << " vs " << (uint32_t)gpu[i] << std::endl;
+				GpuFree  (src);
+				std::free(cpu);
+				GpuFree  (gpu);
 				return false;
 			}
 		}
