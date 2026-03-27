@@ -147,13 +147,13 @@ if (BUILD_VULKAN_ADAPTER)
 		message(FATAL_ERROR "Vulkan not found! BUILD_VULKAN_ADAPTER is enabled but Vulkan SDK is missing.")
 	endif()
 
-	set(SLANG_DIR "D:/programovanie/slang")
+	set(SLANG_DIR "${CMAKE_SOURCE_DIR}/external/Slang")
 	target_include_directories(${PROJECT_NAME} PRIVATE "${SLANG_DIR}/include")
 	target_link_libraries(${PROJECT_NAME} PRIVATE "${SLANG_DIR}/lib/slang.lib")
 
-	# copy slang.dll to binary dir for execution
+	# copy slang binaries to build folder
 	add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-		COMMAND ${CMAKE_COMMAND} -E copy_if_different
-		"${SLANG_DIR}/bin/slang.dll"
+		COMMAND ${CMAKE_COMMAND} -E copy_directory
+		"${SLANG_DIR}/bin"
 		$<TARGET_FILE_DIR:${PROJECT_NAME}>)
 endif()
