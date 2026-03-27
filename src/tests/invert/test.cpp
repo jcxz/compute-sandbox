@@ -7,7 +7,7 @@
 
 
 
-static bool WritePPM(
+[[maybe_unused]] static bool WritePPM(
 	const char* const path,
 	const uint8_t* const pData,
 	const size_t strideBytes,
@@ -52,7 +52,7 @@ static bool WritePPM(
 	}
 }
 
-static void GenerateCheckerboard(uint8_t* data, const uint32_t w, const uint32_t h)
+[[maybe_unused]] static void GenerateCheckerboard(uint8_t* data, const uint32_t w, const uint32_t h)
 {
 	static constexpr uint32_t patternSize = 256; //16;
 	for (uint32_t y = 0; y < h; ++y)
