@@ -149,7 +149,7 @@ void* AdapterVk::Alloc(const size_t size, const AllocationMode mode)
 	allocInfo.pNext = &allocateFlagsInfo;
 	allocInfo.allocationSize = memRequirements.size;
 	allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, properties);
-	if (allocInfo.memoryTypeIndex == -1)
+	if (allocInfo.memoryTypeIndex == uint32_t(-1))
 	{
 		std::cerr << "AdapterVk::Alloc() - Failed to find suitable memory type!" << std::endl;
 		vkDestroyBuffer(mDevice, alloc.buffer, nullptr);
@@ -298,7 +298,7 @@ uint32_t AdapterVk::FindMemoryType(const uint32_t typeFilter, const VkMemoryProp
 			return i;
 		}
 	}
-	return -1;
+	return uint32_t(-1);
 }
 
 const AdapterVk::KernelInfo* AdapterVk::RequestKernel(const uint32_t id)
@@ -725,7 +725,7 @@ bool AdapterVk::Init(const bool debugMode)
 	std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
 	vkGetPhysicalDeviceQueueFamilyProperties(mPhysicalDevice, &queueFamilyCount, queueFamilies.data());
 
-	uint32_t computeQueueFamilyIndex = -1;
+	uint32_t computeQueueFamilyIndex = uint32_t(-1);
 	for (uint32_t i = 0; i < queueFamilyCount; ++i)
 	{
 		if (queueFamilies[i].queueFlags & VK_QUEUE_COMPUTE_BIT)
@@ -735,7 +735,7 @@ bool AdapterVk::Init(const bool debugMode)
 		}
 	}
 
-	if (computeQueueFamilyIndex == -1)
+	if (computeQueueFamilyIndex == uint32_t(-1))
 	{
 		std::cerr << "AdapterVk::Init() - Failed to find a compute queue family!" << std::endl;
 		return false;

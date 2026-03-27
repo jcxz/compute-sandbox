@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.30)
 set(PROJECT_NAME compute-sandbox)
 project(${PROJECT_NAME})
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 
 # --- CONFIGURATION OPTIONS ---
 if(APPLE)
@@ -46,6 +46,14 @@ set(SLANG_SHADERS
 add_executable(${PROJECT_NAME} ${HEADERS} ${SOURCES} ${SLANG_SHADERS})
 target_include_directories(${PROJECT_NAME} PRIVATE src)
 target_include_directories(${PROJECT_NAME} PRIVATE external)
+
+# --- COMPILER WARNINGS ---
+if(MSVC)
+	target_compile_options(${PROJECT_NAME} PRIVATE /W4 /WX /permissive-)
+	target_compile_definitions(${PROJECT_NAME} PRIVATE _CRT_SECURE_NO_WARNINGS)
+else()
+	target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -pedantic -Werror -Wno-missing-field-initializers)
+endif()
 
 # --- METAL ADAPTER ---
 if (BUILD_METAL_ADAPTER)

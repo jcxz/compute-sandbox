@@ -36,7 +36,7 @@ static bool WritePPM(
 	return true;
 }
 
-static void GenerateRandom(uint8_t* data, const uint32_t w, const uint32_t h)
+[[maybe_unused]] static void GenerateRandom(uint8_t* data, const uint32_t w, const uint32_t h)
 {
 	static std::random_device sRngSeed;
 	static std::mt19937 sRng(sRngSeed());
