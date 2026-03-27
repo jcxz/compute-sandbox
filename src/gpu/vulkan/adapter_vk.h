@@ -35,9 +35,12 @@ private:
 		//! CPU mapped pointer to the buffer
 		void* ptr = nullptr;
 
-		Allocation() = default;
-		Allocation(const Allocation&) = default;
-		Allocation& operator=(const Allocation&) = default;
+		explicit Allocation(AdapterVk* pAdapter = nullptr)
+			: pAdapter(pAdapter)
+		{ }
+
+		Allocation(const Allocation& ) = delete;
+		Allocation& operator=(const Allocation& ) = delete;
 
 		Allocation(Allocation&& other) noexcept
 			: pAdapter(other.pAdapter)
@@ -87,10 +90,24 @@ private:
 		//! Layout of the kernel arguments, so that we know how to fill them up
 		std::vector<size_t> offsets;
 
-		void Swap(KernelReflectionInfo& other)
+		KernelReflectionInfo() = default;
+		KernelReflectionInfo(const KernelReflectionInfo& ) = default;
+		KernelReflectionInfo& operator=(const KernelReflectionInfo& ) = default;
+
+		KernelReflectionInfo(KernelReflectionInfo&& other) noexcept
+			: threadGroupSize{other.threadGroupSize[0], other.threadGroupSize[1], other.threadGroupSize[2]}
+			, argsBufferSize(other.argsBufferSize)
+			, offsets(std::move(other.offsets))
+		{ }
+
+		KernelReflectionInfo& operator=(KernelReflectionInfo&& other) noexcept
 		{
-			std::swap(threadGroupSize, other.threadGroupSize);
-			std::swap(offsets, other.offsets);
+			threadGroupSize[0] = other.threadGroupSize[0];
+			threadGroupSize[1] = other.threadGroupSize[1];
+			threadGroupSize[2] = other.threadGroupSize[2];
+			argsBufferSize = other.argsBufferSize;
+			offsets = std::move(other.offsets);
+			return *this;
 		}
 	};
 
@@ -110,22 +127,44 @@ private:
 		//! Reflection information about the kernel
 		KernelReflectionInfo reflectionInfo;
 
-		void Swap(KernelInfo& other)
+		explicit KernelInfo(AdapterVk* pAdapter = nullptr)
+			: pAdapter(pAdapter)
+		{ }
+
+		KernelInfo(const KernelInfo& ) = delete;
+		KernelInfo& operator=(const KernelInfo& ) = delete;
+
+		KernelInfo(KernelInfo&& other) noexcept
+			: pAdapter(other.pAdapter)
+			, pArgsBuffer(other.pArgsBuffer)
+			, argsBufferDeviceAddress(other.argsBufferDeviceAddress)
+			, pipeline(other.pipeline)
+			, pipelineLayout(other.pipelineLayout)
+			, reflectionInfo(std::move(other.reflectionInfo))
+		{
+			other.pAdapter = nullptr;
+			other.pArgsBuffer = nullptr;
+			other.argsBufferDeviceAddress = 0;
+			other.pipeline = VK_NULL_HANDLE;
+			other.pipelineLayout = VK_NULL_HANDLE;
+		}
+
+		KernelInfo& operator=(KernelInfo&& other) noexcept
 		{
 			std::swap(pAdapter, other.pAdapter);
 			std::swap(pArgsBuffer, other.pArgsBuffer);
+			std::swap(argsBufferDeviceAddress, other.argsBufferDeviceAddress);
 			std::swap(pipeline, other.pipeline);
 			std::swap(pipelineLayout, other.pipelineLayout);
-			reflectionInfo.Swap(other.reflectionInfo);
+			reflectionInfo = std::move(other.reflectionInfo);
+			return *this;
 		}
 
 		~KernelInfo()
 		{
 			if (pAdapter)
 			{
-				// free the buffer resource
 				pAdapter->Free(pArgsBuffer);
-				// free the all the layout descriptors
 				vkDestroyPipeline(pAdapter->mDevice, pipeline, nullptr);
 				vkDestroyPipelineLayout(pAdapter->mDevice, pipelineLayout, nullptr);
 			}

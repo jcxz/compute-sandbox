@@ -105,8 +105,7 @@ void* AdapterVk::Alloc(const size_t size, const AllocationMode mode)
 {
 	EM_ASSERT(IsInitialized() && "Vulkan adapter must be initialized prior to calling of its functions");
 
-	Allocation alloc;
-	alloc.pAdapter = this;
+	Allocation alloc(this);
 
 	// Create buffer
 	VkBufferCreateInfo bufferInfo;
@@ -353,8 +352,7 @@ const AdapterVk::KernelInfo* AdapterVk::RequestKernel(const uint32_t id)
 	auto& kernel = mKernels[id];
 	if (kernel.pipeline == VK_NULL_HANDLE)
 	{
-		KernelInfo kernelInfo;
-		kernelInfo.pAdapter = this;
+		KernelInfo kernelInfo(this);
 
 		// build slang program
 		VkShaderModule shaderModule;
@@ -438,7 +436,7 @@ const AdapterVk::KernelInfo* AdapterVk::RequestKernel(const uint32_t id)
 		kernelInfo.argsBufferDeviceAddress = GetAllocation(kernelInfo.pArgsBuffer)->deviceAddress;
 
 		// now that everyhting succeeded we can finally store all information to the kernel cache
-		kernel.Swap(kernelInfo);
+		kernel = std::move(kernelInfo);
 	}
 
 	return &kernel;
