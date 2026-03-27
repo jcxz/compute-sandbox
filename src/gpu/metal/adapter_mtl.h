@@ -35,14 +35,14 @@ public:
 		const void* const pArgs,
 		const refl::TypeMetaInfo* const pArgsInfo) override final;
 
-	static AdapterMtl* CreateMetalAdapter()
+	static AdapterMtl* CreateMetalAdapter(const bool debugMode = false)
 	{
 		std::unique_ptr<AdapterMtl> pAdapter(new AdapterMtl);
-		return pAdapter->Init() ? pAdapter.release() : nullptr;
+		return pAdapter->Init(debugMode) ? pAdapter.release() : nullptr;
 	}
 
 private:
-	bool Init();
+	bool Init(const bool debugMode);
 
 	const KernelInfo* RequestKernel(const uint32_t id);
 
@@ -88,6 +88,6 @@ private:
 	std::unordered_map<uint64_t, NS::SharedPtr<MTL::Buffer>> mAllocations;
 };
 
-extern IAdapter* CreateMetalAdapter();
+extern IAdapter* CreateMetalAdapter(const bool debugMode = false);
 
 } // End of namespace gpu

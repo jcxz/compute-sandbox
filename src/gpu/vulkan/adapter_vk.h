@@ -186,7 +186,7 @@ public:
 		const void* const pArgs,
 		const refl::TypeMetaInfo* const pArgsInfo) override final;
 
-	static AdapterVk* CreateVulkanAdapter(const bool debugMode = true)
+	static AdapterVk* CreateVulkanAdapter(const bool debugMode = false)
 	{
 		std::unique_ptr<AdapterVk> pAdapter(new AdapterVk);
 		return pAdapter->Init(debugMode) ? pAdapter.release() : nullptr;
@@ -240,6 +240,6 @@ private:
 	std::unordered_map<void*, Allocation> mAllocations;
 };
 
-extern IAdapter* CreateVulkanAdapter(const bool debugMode);
+extern IAdapter* CreateVulkanAdapter(const bool debugMode = false);
 
 } // End of namespace gpu

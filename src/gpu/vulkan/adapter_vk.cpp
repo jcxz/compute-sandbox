@@ -213,7 +213,6 @@ void* AdapterVk::Alloc(const size_t size, const AllocationMode mode)
 void AdapterVk::Free(void* const ptr)
 {
 	EM_ASSERT(IsInitialized() && "Vulkan adapter must be initialized prior to calling of its functions");
-
 	mAllocations.erase(ptr);
 }
 

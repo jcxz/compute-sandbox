@@ -109,12 +109,19 @@ bool AdapterMtl::ExecuteKernel(
 	return true;
 }
 
-bool AdapterMtl::Init()
+bool AdapterMtl::Init(const bool debugMode)
 {
 	// the command queue is initialized as last in the initialization process,
 	// so if we have a valid queue, we know the initialization has already succeeded in the past
 	if (mpCommandQueue)
 		return true;
+
+	if (debugMode)
+	{
+		setenv("MTL_DEBUG_LAYER", "1", 1);                  // Enable Metal validation
+		setenv("MTL_SHADER_VALIDATION", "1", 1);            // shader-side validation
+		setenv("MTL_DEBUG_LAYER_WARNING_MODE", "nslog", 1); // log warnings
+	}
 
 	// create an autorelease pool for this adapter
 	if (!(mpAutoReleasePool = TransferPtr(NS::AutoreleasePool::alloc()->init())))
@@ -275,9 +282,9 @@ MTL::Buffer* AdapterMtl::GetAllocationBuffer(const uint64_t ptr) const
 	return it->second.get();
 }
 
-extern IAdapter* CreateMetalAdapter()
+extern IAdapter* CreateMetalAdapter(const bool debugMode)
 {
-	return AdapterMtl::CreateMetalAdapter();
+	return AdapterMtl::CreateMetalAdapter(debugMode);
 }
 
 } // End of namespace gpu
