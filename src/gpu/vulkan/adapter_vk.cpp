@@ -151,22 +151,18 @@ void* AdapterVk::Alloc(const size_t size, const AllocationMode mode)
 	if (allocInfo.memoryTypeIndex == uint32_t(-1))
 	{
 		std::cerr << "AdapterVk::Alloc() - Failed to find suitable memory type!" << std::endl;
-		vkDestroyBuffer(mDevice, alloc.buffer, nullptr);
 		return nullptr;
 	}
 
 	if (vkAllocateMemory(mDevice, &allocInfo, nullptr, &alloc.memory) != VK_SUCCESS)
 	{
 		std::cerr << "AdapterVk::Alloc() - Failed to allocate buffer memory!" << std::endl;
-		vkDestroyBuffer(mDevice, alloc.buffer, nullptr);
 		return nullptr;
 	}
 
 	if (vkBindBufferMemory(mDevice, alloc.buffer, alloc.memory, 0) != VK_SUCCESS)
 	{
 		std::cerr << "AdapterVk::Alloc() - Failed to bind buffer memory!" << std::endl;
-		vkDestroyBuffer(mDevice, alloc.buffer, nullptr);
-		vkFreeMemory(mDevice, alloc.memory, nullptr);
 		return nullptr;
 	}
 
@@ -182,8 +178,6 @@ void* AdapterVk::Alloc(const size_t size, const AllocationMode mode)
 		if (vkMapMemory(mDevice, alloc.memory, 0, size, 0, &alloc.ptr) != VK_SUCCESS)
 		{
 			std::cerr << "AdapterVk::Alloc() - Failed to map buffer memory!" << std::endl;
-			vkDestroyBuffer(mDevice, alloc.buffer, nullptr);
-			vkFreeMemory(mDevice, alloc.memory, nullptr);
 			return nullptr;
 		}
 	}
