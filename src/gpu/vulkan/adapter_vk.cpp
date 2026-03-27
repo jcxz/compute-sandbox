@@ -681,13 +681,34 @@ bool AdapterVk::Init(const bool debugMode)
 	// Simple heuristic: just pick the first one, could be enhanced to prefer discrete GPUs
 	mPhysicalDevice = devices[0];
 
-	VkPhysicalDeviceFeatures deviceFeatures;
-	vkGetPhysicalDeviceFeatures(mPhysicalDevice, &deviceFeatures);
+	//VkPhysicalDeviceFeatures deviceFeatures;
+	//vkGetPhysicalDeviceFeatures(mPhysicalDevice, &deviceFeatures);
 
-	//VkPhysicalDeviceFeatures2 deviceFeatures2;
-	//deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-	//deviceFeatures2.pNext = nullptr;
-	//vkGetPhysicalDeviceFeatures2(mPhysicalDevice, &deviceFeatures2);
+	VkPhysicalDeviceVulkan11Features vk11Features {
+		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+		.pNext = nullptr
+	};
+
+	VkPhysicalDeviceVulkan12Features vk12Features {
+		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+		.pNext = &vk11Features,
+	};
+
+	VkPhysicalDeviceVulkan13Features vk13Features {
+		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+		.pNext = &vk12Features,
+	};
+
+	VkPhysicalDeviceFeatures2 deviceFeatures2;
+	deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+	deviceFeatures2.pNext = &vk13Features;
+	vkGetPhysicalDeviceFeatures2(mPhysicalDevice, &deviceFeatures2);
+
+	if (!vk12Features.storagePushConstant8 || !vk12Features.shaderInt8 || !vk12Features.bufferDeviceAddress)
+	{
+		std::cerr << "AdapterVk::Init() - Required Vulkan 1.2 features are not supported!" << std::endl;
+		return false;
+	}
 
 	// in modern Vulkan it is allegedly not considered best practive to enable
 	// to all supported feature, because certain combinations of features and extensions
@@ -761,7 +782,7 @@ bool AdapterVk::Init(const bool debugMode)
 	deviceCreateInfo.ppEnabledLayerNames = nullptr;
 	deviceCreateInfo.enabledExtensionCount = 0;
 	deviceCreateInfo.ppEnabledExtensionNames = nullptr;
-	deviceCreateInfo.pEnabledFeatures = &deviceFeatures;   // lets enable all supported device features
+	deviceCreateInfo.pEnabledFeatures = &deviceFeatures2.features;   // lets enable all supported device features
 
 	if (vkCreateDevice(mPhysicalDevice, &deviceCreateInfo, nullptr, &mDevice) != VK_SUCCESS)
 	{
