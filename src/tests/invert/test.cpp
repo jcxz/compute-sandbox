@@ -6,6 +6,7 @@
 #include <iostream>
 
 
+
 static bool WritePPM(
 	const char* const path,
 	const uint8_t* const pData,
@@ -92,6 +93,8 @@ bool testInvert()
 	auto cpu_t1 = std::chrono::high_resolution_clock::now();
 
 	// compute on GPU
+	BeginGpuCapture();
+
 	auto gpu_t0 = std::chrono::high_resolution_clock::now();
 	{
 		Invert::ArgsType args;
@@ -102,6 +105,8 @@ bool testInvert()
 		ExecuteGPUKernel<Invert>(W, H, args);
 	}
 	auto gpu_t1 = std::chrono::high_resolution_clock::now();
+
+	EndGpuCapture();
 
 	// write outputs as images
 	//WritePPM("cpu.ppm", cpu, W * sizeof(uint8_t), W, H);
