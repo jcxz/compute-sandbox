@@ -232,28 +232,39 @@ bool AdapterVk::ExecuteKernel(
 	}
 
 	// 3. Allocate a command buffer
-	VkCommandBufferAllocateInfo commandBufferAllocInfo;
-	commandBufferAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	commandBufferAllocInfo.pNext = nullptr;
-	commandBufferAllocInfo.commandPool = mCommandPool;
-	commandBufferAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	commandBufferAllocInfo.commandBufferCount = 1;
-
 	VkCommandBuffer commandBuffer;
-	if (vkAllocateCommandBuffers(mDevice, &commandBufferAllocInfo, &commandBuffer) != VK_SUCCESS)
 	{
-		std::cerr << "AdapterVk::ExecuteKernel() - Failed to allocate command buffers!" << std::endl;
-		return false;
+		VkCommandBufferAllocateInfo commandBufferAllocInfo;
+		commandBufferAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		commandBufferAllocInfo.pNext = nullptr;
+		commandBufferAllocInfo.commandPool = mCommandPool;
+		commandBufferAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+		commandBufferAllocInfo.commandBufferCount = 1;
+
+		const VkResult res = vkAllocateCommandBuffers(mDevice, &commandBufferAllocInfo, &commandBuffer);
+		if (res != VK_SUCCESS)
+		{
+			std::cerr << "AdapterVk::ExecuteKernel() - Failed to allocate command buffers!" << std::endl;
+			return false;
+		}
 	}
 
 	// 4. Begin recording
-	VkCommandBufferBeginInfo beginInfo;
-	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	beginInfo.pNext = nullptr;
-	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-	beginInfo.pInheritanceInfo = nullptr;
+	{
+		VkCommandBufferBeginInfo beginInfo;
+		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		beginInfo.pNext = nullptr;
+		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+		beginInfo.pInheritanceInfo = nullptr;
 
-	vkBeginCommandBuffer(commandBuffer, &beginInfo);
+		const VkResult res = vkBeginCommandBuffer(commandBuffer, &beginInfo);
+		if (res != VK_SUCCESS)
+		{
+			std::cerr << "vkBeginCommandBuffer failed with " << VkResultToString(res) << std::endl;
+			vkFreeCommandBuffers(mDevice, mCommandPool, 1, &commandBuffer);
+			return false;
+		}
+	}
 
 	// 5. Bind Pipeline and push constants
 	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pKernel->pipeline);
@@ -262,24 +273,49 @@ bool AdapterVk::ExecuteKernel(
 	// 6. Dispatch
 	vkCmdDispatch(commandBuffer, nx, ny, nz);
 
-	vkEndCommandBuffer(commandBuffer);
+	{
+		const VkResult res = vkEndCommandBuffer(commandBuffer);
+		if (res != VK_SUCCESS)
+		{
+			std::cerr << "vkEndCommandBuffer failed with " << VkResultToString(res) << std::endl;
+			vkFreeCommandBuffers(mDevice, mCommandPool, 1, &commandBuffer);
+			return false;
+		}
+	}
 
 	// 7. Submit
-	VkSubmitInfo submitInfo;
-	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	submitInfo.pNext = nullptr;
-	submitInfo.waitSemaphoreCount = 0;
-	submitInfo.pWaitSemaphores = nullptr;
-	submitInfo.pWaitDstStageMask = nullptr;
-	submitInfo.commandBufferCount = 1;
-	submitInfo.pCommandBuffers = &commandBuffer;
-	submitInfo.signalSemaphoreCount = 0;
-	submitInfo.pSignalSemaphores = nullptr;
+	{
+		VkSubmitInfo submitInfo;
+		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submitInfo.pNext = nullptr;
+		submitInfo.waitSemaphoreCount = 0;
+		submitInfo.pWaitSemaphores = nullptr;
+		submitInfo.pWaitDstStageMask = nullptr;
+		submitInfo.commandBufferCount = 1;
+		submitInfo.pCommandBuffers = &commandBuffer;
+		submitInfo.signalSemaphoreCount = 0;
+		submitInfo.pSignalSemaphores = nullptr;
 
-	vkQueueSubmit(mComputeQueue, 1, &submitInfo, VK_NULL_HANDLE);
+		const VkResult res = vkQueueSubmit(mComputeQueue, 1, &submitInfo, VK_NULL_HANDLE);
+		if (res != VK_SUCCESS)
+		{
+			std::cerr << "vkQueueSubmit failed with " << VkResultToString(res) << std::endl;
+			vkFreeCommandBuffers(mDevice, mCommandPool, 1, &commandBuffer);
+			return false;
+		}
+	}
+
 
 	// 8. Wait (Synchronous for now)
-	vkQueueWaitIdle(mComputeQueue);
+	{
+		const VkResult res = vkQueueWaitIdle(mComputeQueue);
+		if (res != VK_SUCCESS)
+		{
+			std::cerr << "vkQueueWaitIdle failed with " << VkResultToString(res) << std::endl;
+			vkFreeCommandBuffers(mDevice, mCommandPool, 1, &commandBuffer);
+			return false;
+		}
+	}
 
 	// 9. Cleanup
 	vkFreeCommandBuffers(mDevice, mCommandPool, 1, &commandBuffer);

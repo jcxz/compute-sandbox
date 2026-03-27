@@ -130,6 +130,7 @@ if (BUILD_VULKAN_ADAPTER)
 
 	set(SOURCES_VULKAN
 		src/gpu/vulkan/adapter_vk.cpp
+		src/gpu/vulkan/vk.cpp
 	)
 
 	target_sources(${PROJECT_NAME} PRIVATE
