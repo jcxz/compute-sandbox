@@ -7,7 +7,7 @@ extern bool testInvert();
 
 int main(const int argc, char* argv[])
 {
-	uint32_t flags = GpuFlags::Debug | GpuFlags::RDocCapture | GpuFlags::PreloadKernels;
+	uint32_t flags = GpuFlags::RDocCapture | GpuFlags::PreloadKernels;
 	for (int i = 1; i < argc; ++i)
 	{
 		const std::string_view arg = argv[i];
