@@ -108,76 +108,95 @@ void* AdapterVk::Alloc(const size_t size, const AllocationMode mode)
 	Allocation alloc(this);
 
 	// Create buffer
-	VkBufferCreateInfo bufferInfo;
-	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	bufferInfo.pNext = nullptr;
-	bufferInfo.flags = 0;
-	bufferInfo.size = size;
-	bufferInfo.usage =
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-		VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_KHR;  // so that we can query the GPU device address of the buffer
-	bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	bufferInfo.queueFamilyIndexCount = 0;
-	bufferInfo.pQueueFamilyIndices = nullptr;
-
-	if (vkCreateBuffer(mDevice, &bufferInfo, nullptr, &alloc.buffer) != VK_SUCCESS)
 	{
-		std::cerr << "AdapterVk::Alloc() - Failed to create buffer!" << std::endl;
-		return nullptr;
+		VkBufferCreateInfo bufferInfo;
+		bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		bufferInfo.pNext = nullptr;
+		bufferInfo.flags = 0;
+		bufferInfo.size = size;
+		bufferInfo.usage =
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+			VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+			VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_KHR;  // so that we can query the GPU device address of the buffer
+		bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+		bufferInfo.queueFamilyIndexCount = 0;
+		bufferInfo.pQueueFamilyIndices = nullptr;
+
+		const VkResult res = vkCreateBuffer(mDevice, &bufferInfo, nullptr, &alloc.buffer);
+		if (res != VK_SUCCESS)
+		{
+			std::cerr << "AdapterVk::Alloc failed: Failed to create backing Vulkan buffer (" << VkResultToString(res) << ")" << std::endl;
+			return nullptr;
+		}
 	}
 
 	// Allocate memory
-	VkMemoryRequirements memRequirements;
-	vkGetBufferMemoryRequirements(mDevice, alloc.buffer, &memRequirements);
-
-	const VkMemoryPropertyFlags properties =
-		(mode == AllocationMode::Device) ?
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT :
-		(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-
-	VkMemoryAllocateFlagsInfo allocateFlagsInfo;
-	allocateFlagsInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
-	allocateFlagsInfo.pNext = nullptr;
-	allocateFlagsInfo.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR;
-	allocateFlagsInfo.deviceMask = 0;
-
-	VkMemoryAllocateInfo allocInfo;
-	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	allocInfo.pNext = &allocateFlagsInfo;
-	allocInfo.allocationSize = memRequirements.size;
-	allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, properties);
-	if (allocInfo.memoryTypeIndex == uint32_t(-1))
 	{
-		std::cerr << "AdapterVk::Alloc() - Failed to find suitable memory type!" << std::endl;
-		return nullptr;
+		VkMemoryRequirements memRequirements;
+		vkGetBufferMemoryRequirements(mDevice, alloc.buffer, &memRequirements);
+
+		const VkMemoryPropertyFlags properties =
+			(mode == AllocationMode::Device) ?
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT :
+			(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+		VkMemoryAllocateFlagsInfo allocateFlagsInfo;
+		allocateFlagsInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+		allocateFlagsInfo.pNext = nullptr;
+		allocateFlagsInfo.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR;
+		allocateFlagsInfo.deviceMask = 0;
+
+		VkMemoryAllocateInfo allocInfo;
+		allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		allocInfo.pNext = &allocateFlagsInfo;
+		allocInfo.allocationSize = memRequirements.size;
+		allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, properties);
+		if (allocInfo.memoryTypeIndex == uint32_t(-1))
+		{
+			std::cerr << "AdapterVk::Alloc failed: Failed to find suitable memory type." << std::endl;
+			return nullptr;
+		}
+
+		const VkResult res = vkAllocateMemory(mDevice, &allocInfo, nullptr, &alloc.memory);
+		if (res != VK_SUCCESS)
+		{
+			std::cerr << "AdapterVk::Alloc failed: Failed to allocate buffer memory for the backing Vulkan buffer (" << VkResultToString(res) << ")" << std::endl;
+			return nullptr;
+		}
 	}
 
-	if (vkAllocateMemory(mDevice, &allocInfo, nullptr, &alloc.memory) != VK_SUCCESS)
+	// bind the memory allocation to the buffer
 	{
-		std::cerr << "AdapterVk::Alloc() - Failed to allocate buffer memory!" << std::endl;
-		return nullptr;
+		const VkResult res = vkBindBufferMemory(mDevice, alloc.buffer, alloc.memory, 0);
+		if (res != VK_SUCCESS)
+		{
+			std::cerr << "AdapterVk::Alloc: Failed to bind memory to the backing Vulkan buffer (" << VkResultToString(res) << ")" << std::endl;
+			return nullptr;
+		}
 	}
 
-	if (vkBindBufferMemory(mDevice, alloc.buffer, alloc.memory, 0) != VK_SUCCESS)
+	// get the device address of the buffer
 	{
-		std::cerr << "AdapterVk::Alloc() - Failed to bind buffer memory!" << std::endl;
-		return nullptr;
+		VkBufferDeviceAddressInfo bufferDeviceAddressInfo;
+		bufferDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+		bufferDeviceAddressInfo.pNext = nullptr;
+		bufferDeviceAddressInfo.buffer = alloc.buffer;
+		alloc.deviceAddress = vkGetBufferDeviceAddress(mDevice, &bufferDeviceAddressInfo);
+		if (alloc.deviceAddress == 0)
+		{
+			std::cerr << "AdapterVk::Alloc: Failed to get the device address of the backing Vulkan buffer" << std::endl;
+			return nullptr;
+		}
 	}
-
-	VkBufferDeviceAddressInfo bufferDeviceAddressInfo;
-	bufferDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-	bufferDeviceAddressInfo.pNext = nullptr;
-	bufferDeviceAddressInfo.buffer = alloc.buffer;
-	alloc.deviceAddress = vkGetBufferDeviceAddress(mDevice, &bufferDeviceAddressInfo);
 
 	// Map memory
 	if (mode == AllocationMode::Shared)
 	{
-		if (vkMapMemory(mDevice, alloc.memory, 0, size, 0, &alloc.ptr) != VK_SUCCESS)
+		const VkResult res = vkMapMemory(mDevice, alloc.memory, 0, size, 0, &alloc.ptr);
+		if (res != VK_SUCCESS)
 		{
-			std::cerr << "AdapterVk::Alloc() - Failed to map buffer memory!" << std::endl;
+			std::cerr << "AdapterVk::Alloc failed: Failed to map the buffer for access by the CPU (" << VkResultToString(res) << ")" << std::endl;
 			return nullptr;
 		}
 	}
