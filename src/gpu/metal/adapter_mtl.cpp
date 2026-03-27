@@ -10,12 +10,7 @@ namespace gpu
 
 void* AdapterMtl::Alloc(const size_t size, const AllocationMode mode)
 {
-	// Initialize GPU if needed
-	if (!Init())
-	{
-		std::cerr << "Failed to initialize GPU" << std::endl;
-		return nullptr;
-	}
+	EM_ASSERT(IsInitialized() && "Metal adapter must be initialized prior to calling any of its functions");
 
 	NS::SharedPtr<NS::AutoreleasePool> pAutoReleasePool = TransferPtr(NS::AutoreleasePool::alloc()->init());
 
@@ -40,6 +35,7 @@ void* AdapterMtl::Alloc(const size_t size, const AllocationMode mode)
 
 void AdapterMtl::Free(void* const ptr)
 {
+	EM_ASSERT(IsInitialized() && "Metal adapter must be initialized prior to calling any of its functions");
 	// remove the allocation record which should also destroy the buffer
 	mAllocations.erase(reinterpret_cast<uint64_t>(ptr));
 }
@@ -52,12 +48,7 @@ bool AdapterMtl::ExecuteKernel(
 	const void* const pArgs,
 	const refl::TypeMetaInfo* const pArgsInfo)
 {
-	// Initialize GPU if needed
-	if (!Init())
-	{
-		std::cerr << "Failed to initialize GPU" << std::endl;
-		return false;
-	}
+	EM_ASSERT(IsInitialized() && "Metal adapter must be initialized prior to calling any of its functions");
 
 	// an autorelease pool to make sure that any temporary (autorelease) allocations (e.g. the command buffer)
 	// get destroyed at the end of this function
@@ -109,11 +100,17 @@ bool AdapterMtl::ExecuteKernel(
 	return true;
 }
 
-bool AdapterMtl::Init(const bool debugMode)
+bool AdapterMtl::IsInitialized() const
 {
 	// the command queue is initialized as last in the initialization process,
 	// so if we have a valid queue, we know the initialization has already succeeded in the past
-	if (mpCommandQueue)
+	return mpCommandQueue != nullptr;
+}
+
+bool AdapterMtl::Init(const bool debugMode)
+{
+	// Check if already initialized
+	if (IsInitialized())
 		return true;
 
 	if (debugMode)

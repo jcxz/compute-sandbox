@@ -103,7 +103,7 @@ AdapterVk::~AdapterVk()
 
 void* AdapterVk::Alloc(const size_t size, const AllocationMode mode)
 {
-	EM_ASSERT(IsInitialized() && "Vulkan adapter must be initialized prior to calling of its functions");
+	EM_ASSERT(IsInitialized() && "Vulkan adapter must be initialized prior to calling any of its functions");
 
 	Allocation alloc(this);
 
@@ -212,7 +212,7 @@ void* AdapterVk::Alloc(const size_t size, const AllocationMode mode)
 
 void AdapterVk::Free(void* const ptr)
 {
-	EM_ASSERT(IsInitialized() && "Vulkan adapter must be initialized prior to calling of its functions");
+	EM_ASSERT(IsInitialized() && "Vulkan adapter must be initialized prior to calling any of its functions");
 	mAllocations.erase(ptr);
 }
 
@@ -224,7 +224,7 @@ bool AdapterVk::ExecuteKernel(
 	const void* const pArgs,
 	const refl::TypeMetaInfo* const pArgsInfo)
 {
-	EM_ASSERT(IsInitialized() && "Vulkan adapter must be initialized prior to calling of its functions");
+	EM_ASSERT(IsInitialized() && "Vulkan adapter must be initialized prior to calling any of its functions");
 
 	// 1. Get/Build Pipeline
 	const KernelInfo* pKernel = RequestKernel(id);

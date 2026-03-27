@@ -42,6 +42,7 @@ public:
 	}
 
 private:
+	bool IsInitialized() const;
 	bool Init(const bool debugMode);
 
 	const KernelInfo* RequestKernel(const uint32_t id);
