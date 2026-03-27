@@ -186,16 +186,20 @@ public:
 		const void* const pArgs,
 		const refl::TypeMetaInfo* const pArgsInfo) override final;
 
-	static AdapterVk* CreateVulkanAdapter(const bool debugMode = false)
+	static AdapterVk* CreateVulkanAdapter(const uint32_t flags = 0)
 	{
 		std::unique_ptr<AdapterVk> pAdapter(new AdapterVk);
-		return pAdapter->Init(debugMode) ? pAdapter.release() : nullptr;
+		return pAdapter->Init(flags) ? pAdapter.release() : nullptr;
 	}
 
 private:
-	uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) const;
+	//! a helper function used when allocating memory
+	uint32_t FindMemoryType(const uint32_t typeFilter, const VkMemoryPropertyFlags properties) const;
+	//! checks if the adapter was initialized
 	bool IsInitialized() const;
-	bool Init(const bool debugMode);
+	//! initializes the adapter
+	bool Init(const uint32_t flags);
+	//! Retrieves the kernel from cache or initializes it if not cached
 	const KernelInfo* RequestKernel(const uint32_t id);
 	//! compiles shader program
 	bool BuildSlangProgram(const std::string& kernelName, slang::IComponentType** ppProgram, VkShaderModule& pShaderModule);
@@ -240,6 +244,6 @@ private:
 	std::unordered_map<void*, Allocation> mAllocations;
 };
 
-extern IAdapter* CreateVulkanAdapter(const bool debugMode = false);
+extern IAdapter* CreateVulkanAdapter(const uint32_t flags = 0);
 
 } // End of namespace gpu

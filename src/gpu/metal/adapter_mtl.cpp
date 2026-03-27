@@ -107,13 +107,13 @@ bool AdapterMtl::IsInitialized() const
 	return mpCommandQueue.get() != nullptr;
 }
 
-bool AdapterMtl::Init(const bool debugMode)
+bool AdapterMtl::Init(const uint32_t flags)
 {
 	// Check if already initialized
 	if (IsInitialized())
 		return true;
 
-	if (debugMode)
+	if (flags & GpuFlags::Debug)
 	{
 		setenv("MTL_DEBUG_LAYER", "1", 1);                  // Enable Metal validation
 		setenv("MTL_SHADER_VALIDATION", "1", 1);            // shader-side validation
@@ -156,7 +156,20 @@ bool AdapterMtl::Init(const bool debugMode)
 	// all CPU kernels have a static ID variable intialized via kernel registry
 	// before main is started, so at this point all kernels
 	// should be registered and this should be a valid code
-	mKernels.resize(KernelRegistry::GetInstance()->GetKernelCount());
+	const uint32_t kernelCount = KernelRegistry::GetInstance()->GetKernelCount();
+	mKernels.resize(kernelCount);
+
+	// also preload kernels if requested
+	if (flags & GpuFlags::PreloadKernels)
+	{
+		for (uint32_t i = 0; i < kernelCount; ++i)
+		{
+			if (RequestKernel(i) == nullptr)
+			{
+				std::cerr << "Failed to preload kernel " << KernelRegistry::GetInstance()->GetKernelName(i) << std::endl;
+			}
+		}
+	}
 
 	return true;
 }
@@ -279,9 +292,9 @@ MTL::Buffer* AdapterMtl::GetAllocationBuffer(const uint64_t ptr) const
 	return it->second.get();
 }
 
-extern IAdapter* CreateMetalAdapter(const bool debugMode)
+extern IAdapter* CreateMetalAdapter(const uint32_t flags)
 {
-	return AdapterMtl::CreateMetalAdapter(debugMode);
+	return AdapterMtl::CreateMetalAdapter(flags);
 }
 
 } // End of namespace gpu

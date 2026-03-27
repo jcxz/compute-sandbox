@@ -20,8 +20,13 @@ enum class GpuAdapterType
 
 enum GpuFlags
 {
-	Debug       = (1 << 0),
-	RDocCapture = (1 << 1),
+	//! if enabled then GPU will be switched into a debug mode
+	Debug          = (1 << 0),
+	//! if enabled then BeginGpuCapture and EndGpuCapture can be used to trigger
+	//! RenderDoc captures of specific kernels
+	RDocCapture    = (1 << 1),
+	//! if enabled then all registered kernels will be preloaded at GPU initialization time
+	PreloadKernels = (1 << 2),
 };
 
 // GPU initialization and termination

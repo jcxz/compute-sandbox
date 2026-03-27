@@ -355,7 +355,7 @@ bool AdapterVk::IsInitialized() const
 	return mDescriptorPool != VK_NULL_HANDLE;
 }
 
-bool AdapterVk::Init(const bool debugMode)
+bool AdapterVk::Init(const uint32_t flags)
 {
 	static const char* const kIncludePaths[] = {
 		"D:/programovanie/compute-sandbox/src",
@@ -426,9 +426,9 @@ bool AdapterVk::Init(const bool debugMode)
 	createInfo.pNext = nullptr;
 	createInfo.flags = 0;
 	createInfo.pApplicationInfo = &appInfo;
-	createInfo.enabledLayerCount = debugMode ? 1 : 0;
+	createInfo.enabledLayerCount = (flags & GpuFlags::Debug) ? 1 : 0;
 	createInfo.ppEnabledLayerNames = validationLayers;
-	createInfo.enabledExtensionCount = debugMode ? 1 : 0;
+	createInfo.enabledExtensionCount = (flags & GpuFlags::Debug) ? 1 : 0;
 	createInfo.ppEnabledExtensionNames = extensions;
 
 	if (vkCreateInstance(&createInfo, nullptr, &mInstance) != VK_SUCCESS)
@@ -438,7 +438,7 @@ bool AdapterVk::Init(const bool debugMode)
 	}
 
 	// Setup debug messenger
-	if (debugMode)
+	if (flags & GpuFlags::Debug)
 	{
 		VkDebugUtilsMessengerCreateInfoEXT debugMessengerCreateInfo;
 		debugMessengerCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
@@ -642,7 +642,20 @@ bool AdapterVk::Init(const bool debugMode)
 	// all CPU kernels have a static ID variable intialized via kernel registry
 	// before main is started, so at this point all kernels
 	// should be registered and this should be a valid code
-	mKernels.resize(KernelRegistry::GetInstance()->GetKernelCount());
+	const uint32_t kernelCount = KernelRegistry::GetInstance()->GetKernelCount();
+	mKernels.resize(kernelCount);
+
+	// also preload kernels if requested
+	if (flags & GpuFlags::PreloadKernels)
+	{
+		for (uint32_t i = 0; i < kernelCount; ++i)
+		{
+			if (RequestKernel(i) == nullptr)
+			{
+				std::cerr << "Failed to preload kernel " << KernelRegistry::GetInstance()->GetKernelName(i) << std::endl;
+			}
+		}
+	}
 
 	return true;
 }
@@ -948,9 +961,9 @@ const AdapterVk::Allocation* AdapterVk::GetAllocation(void* const ptr) const
 	return &it->second;
 }
 
-extern IAdapter* CreateVulkanAdapter(const bool debugMode)
+extern IAdapter* CreateVulkanAdapter(const uint32_t flags)
 {
-	return AdapterVk::CreateVulkanAdapter(debugMode);
+	return AdapterVk::CreateVulkanAdapter(flags);
 }
 
 } // End of namespace gpu

@@ -25,8 +25,8 @@ static bool gIsGpuInitialized = false;
 namespace gpu
 {
 
-extern IAdapter* CreateMetalAdapter(const bool debugMode);
-extern IAdapter* CreateVulkanAdapter(const bool debugMode);
+extern IAdapter* CreateMetalAdapter(const uint32_t flags);
+extern IAdapter* CreateVulkanAdapter(const uint32_t flags);
 
 }
 
@@ -59,10 +59,10 @@ static bool InitGpuAdapter(const uint32_t flags, const GpuAdapterType type)
 		case GpuAdapterType::Default:
 			// pick the first enabled Adapter whichever that may be
 #ifdef BUILD_METAL_ADAPTER
-		case GpuAdapterType::Metal: gAdapter = gpu::CreateMetalAdapter(flags & GpuFlags::Debug); break;
+		case GpuAdapterType::Metal: gAdapter = gpu::CreateMetalAdapter(flags); break;
 #endif
 #ifdef BUILD_VULKAN_ADAPTER
-		case GpuAdapterType::Vulkan: gAdapter = gpu::CreateVulkanAdapter(flags & GpuFlags::Debug); break;
+		case GpuAdapterType::Vulkan: gAdapter = gpu::CreateVulkanAdapter(flags); break;
 #endif
 		default:
 			break;
