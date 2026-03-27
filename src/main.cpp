@@ -11,7 +11,17 @@ int main(const int argc, char* argv[])
 	for (int i = 1; i < argc; ++i)
 	{
 		const std::string_view arg = argv[i];
-		if (arg == "--enable-debug")
+		if (arg == "--help")
+		{
+			std::cout << "Usage: compute-sandbox [options]\n"
+					  << "Options:\n"
+					  << "  --help             Display this help message\n"
+					  << "  --enable-debug     Turns on GpuFlags::Debug\n"
+					  << "  --disable-capture  Turns off GpuFlags::RDocCapture\n"
+					  << "  --disable-preload  Turns off GpuFlags::PreloadKernels\n";
+			return 0;
+		}
+		else if (arg == "--enable-debug")
 		{
 			flags |= GpuFlags::Debug;
 		}
