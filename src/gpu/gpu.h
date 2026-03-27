@@ -18,9 +18,21 @@ enum class GpuAdapterType
 	Vulkan  = (1 << 2),
 };
 
+enum GpuFlags
+{
+	Debug       = (1 << 0),
+	RDocCapture = (1 << 1),
+};
+
 // GPU initialization and termination
-extern bool InitializeGpu(const GpuAdapterType type = GpuAdapterType::Default);
+extern bool InitializeGpu(const uint32_t flags = 0, const GpuAdapterType type = GpuAdapterType::Default);
 extern void TerminateGpu();
+
+//! Starts capturing gpu commands in RenderDoc
+extern void BeginGpuCapture();
+
+//! Ends RenderDoc GPU capture
+extern void EndGpuCapture();
 
 //! Allocates GPU memory of a given size
 //! optional flags specify whether the allocation is exclusive to GPU and not visible to CPU

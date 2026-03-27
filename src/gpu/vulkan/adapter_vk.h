@@ -201,6 +201,6 @@ private:
 	std::unordered_map<void*, Allocation> mAllocations;
 };
 
-extern IAdapter* CreateVulkanAdapter();
+extern IAdapter* CreateVulkanAdapter(const bool debugMode);
 
 } // End of namespace gpu

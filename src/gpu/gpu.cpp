@@ -1,23 +1,52 @@
 #include "gpu/gpu.h"
 #include "gpu/kernel_registry.h"
 #include "gpu/adapter.h"
+#ifdef _WIN32
+#include <Windows.h>
+#endif
+#include "RenderDoc/renderdoc_app.h"
+
+#include <iostream>
 
 
+
+// for more see: https://renderdoc.org/docs/in_application_api.html
+static RENDERDOC_API_1_1_2* gRdocApi = nullptr;
+// a pointer to the GPU adapter 	instance
 static gpu::IAdapter* gAdapter = nullptr;
+// a flag indicating whether the GPU api was initialized successfully
+static bool gIsGpuInitialized = false;
 
 namespace gpu
 {
 
 extern IAdapter* CreateMetalAdapter();
-extern IAdapter* CreateVulkanAdapter();
+extern IAdapter* CreateVulkanAdapter(const bool debugMode);
 
 }
 
-bool InitializeGpu(const GpuAdapterType type)
+static bool InitRDocCapture()
 {
-	if (gAdapter)
-		return true;
+#ifdef _WIN32
+	if (HMODULE mod = GetModuleHandleA("renderdoc.dll"))
+#else
+	// At init, on linux/android.
+	// For android replace librenderdoc.so with libVkLayer_GLES_RenderDoc.so
+	if(void *mod = dlopen("librenderdoc.so", RTLD_NOW | RTLD_NOLOAD))
+#endif
+	{
+		const pRENDERDOC_GetAPI RENDERDOC_GetAPI = reinterpret_cast<pRENDERDOC_GetAPI>(reinterpret_cast<void*>(GetProcAddress(mod, "RENDERDOC_GetAPI")));
+		const int ret = RENDERDOC_GetAPI(eRENDERDOC_API_Version_1_1_2, (void **)&gRdocApi);
+		std::cerr << "RENDERDOC_GetAPI returned " << ret << std::endl;
+		return ret == 1;
+	}
 
+	// RenderDoc is not present (most likely we are not running via RenderDoc)
+	return true;
+}
+
+static bool InitGpuAdapter(const uint32_t flags, const GpuAdapterType type)
+{
 	switch (type)
 	{
 		case GpuAdapterType::Default:
@@ -26,7 +55,7 @@ bool InitializeGpu(const GpuAdapterType type)
 		case GpuAdapterType::Metal: gAdapter = gpu::CreateMetalAdapter(); break;
 #endif
 #ifdef BUILD_VULKAN_ADAPTER
-		case GpuAdapterType::Vulkan: gAdapter = gpu::CreateVulkanAdapter(); break;
+		case GpuAdapterType::Vulkan: gAdapter = gpu::CreateVulkanAdapter(flags & GpuFlags::Debug); break;
 #endif
 		default:
 			break;
@@ -35,10 +64,40 @@ bool InitializeGpu(const GpuAdapterType type)
 	return gAdapter != nullptr;
 }
 
+bool InitializeGpu(const uint32_t flags, const GpuAdapterType type)
+{
+	if (gIsGpuInitialized)
+		return true;
+
+	if (flags & GpuFlags::RDocCapture)
+	{
+		if (!InitRDocCapture())
+			return false;
+	}
+
+	if (!InitGpuAdapter(flags, type))
+		return false;
+
+	gIsGpuInitialized = true;
+	return true;
+}
+
 void TerminateGpu()
 {
 	delete gAdapter;
 	gAdapter = nullptr;
+}
+
+void BeginGpuCapture()
+{
+	if (gRdocApi)
+		gRdocApi->StartFrameCapture(nullptr, nullptr);
+}
+
+void EndGpuCapture()
+{
+	if (gRdocApi)
+		gRdocApi->EndFrameCapture(nullptr, nullptr);
 }
 
 void* GpuAlloc(const size_t size, const AllocationMode mode)

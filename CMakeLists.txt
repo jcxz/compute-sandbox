@@ -45,6 +45,7 @@ set(SLANG_SHADERS
 
 add_executable(${PROJECT_NAME} ${HEADERS} ${SOURCES} ${SLANG_SHADERS})
 target_include_directories(${PROJECT_NAME} PRIVATE src)
+target_include_directories(${PROJECT_NAME} PRIVATE external)
 
 # --- METAL ADAPTER ---
 if (BUILD_METAL_ADAPTER)

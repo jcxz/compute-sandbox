@@ -871,9 +871,9 @@ const AdapterVk::Allocation* AdapterVk::GetAllocation(void* const ptr) const
 	return &it->second;
 }
 
-extern IAdapter* CreateVulkanAdapter()
+extern IAdapter* CreateVulkanAdapter(const bool debugMode)
 {
-	return AdapterVk::CreateVulkanAdapter();
+	return AdapterVk::CreateVulkanAdapter(debugMode);
 }
 
 } // End of namespace gpu
