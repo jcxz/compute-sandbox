@@ -341,6 +341,7 @@ const AdapterVk::KernelInfo* AdapterVk::RequestKernel(const uint32_t id)
 {
 	EM_ASSERT((mKernels.size() == KernelRegistry::GetInstance()->GetKernelCount()) && "Kernel registry size mismatch");
 
+	// first make sure that the provided kernel id is valid
 	const std::string& kernelName = KernelRegistry::GetInstance()->GetKernelName(id);
 	if (kernelName.empty())
 	{
@@ -348,6 +349,7 @@ const AdapterVk::KernelInfo* AdapterVk::RequestKernel(const uint32_t id)
 		return nullptr;
 	}
 
+	// then look it up in the cache and set it up if necessary
 	auto& kernel = mKernels[id];
 	if (kernel.pipeline == VK_NULL_HANDLE)
 	{
@@ -363,6 +365,7 @@ const AdapterVk::KernelInfo* AdapterVk::RequestKernel(const uint32_t id)
 			return nullptr;
 		}
 
+		// perform program's reflection to know how to pass arguments to the kernel at runtime
 		if (!ReflectSlangProgram(pProgram, kernelInfo.reflectionInfo))
 		{
 			std::cerr << "Failed to reflect " << kernelName << std::endl;
@@ -371,57 +374,60 @@ const AdapterVk::KernelInfo* AdapterVk::RequestKernel(const uint32_t id)
 		}
 
 		// create pipeline layout
-		VkPushConstantRange pushConstantRange;
-		pushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-		pushConstantRange.offset = 0;
-		pushConstantRange.size = sizeof(VkDeviceAddress);
-
-		VkPipelineLayoutCreateInfo pipelineLayoutInfo;
-		pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-		pipelineLayoutInfo.pNext = nullptr;
-		pipelineLayoutInfo.flags = 0;
-		pipelineLayoutInfo.setLayoutCount = 0;
-		pipelineLayoutInfo.pSetLayouts = nullptr;
-		pipelineLayoutInfo.pushConstantRangeCount = 1;
-		pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
-
 		{
+			VkPushConstantRange pushConstantRange;
+			pushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+			pushConstantRange.offset = 0;
+			pushConstantRange.size = sizeof(VkDeviceAddress);
+
+			VkPipelineLayoutCreateInfo pipelineLayoutInfo;
+			pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+			pipelineLayoutInfo.pNext = nullptr;
+			pipelineLayoutInfo.flags = 0;
+			pipelineLayoutInfo.setLayoutCount = 0;
+			pipelineLayoutInfo.pSetLayouts = nullptr;
+			pipelineLayoutInfo.pushConstantRangeCount = 1;
+			pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
+
 			const VkResult res = vkCreatePipelineLayout(mDevice, &pipelineLayoutInfo, nullptr, &kernelInfo.pipelineLayout);
 			if (res != VK_SUCCESS)
 			{
-				std::cerr << "Failed to create VkPipelineLayout: " << res << std::endl;
+				std::cerr << "Failed to create VkPipelineLayout: " << VkResultToString(res) << std::endl;
 				vkDestroyShaderModule(mDevice, shaderModule, nullptr);
 				return VK_NULL_HANDLE;
 			}
 		}
 
-		VkComputePipelineCreateInfo pipelineInfo;
-		pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-		pipelineInfo.pNext = nullptr;
-		pipelineInfo.flags = 0;
-		pipelineInfo.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-		pipelineInfo.stage.pNext = nullptr;
-		pipelineInfo.stage.flags = 0;
-		pipelineInfo.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-		pipelineInfo.stage.module = shaderModule;
-		pipelineInfo.stage.pName = "main";
-		pipelineInfo.stage.pSpecializationInfo = nullptr;
-		pipelineInfo.layout = kernelInfo.pipelineLayout;
-		pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
-		pipelineInfo.basePipelineIndex = -1;
-
+		// create pipeline
 		{
+			VkComputePipelineCreateInfo pipelineInfo;
+			pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+			pipelineInfo.pNext = nullptr;
+			pipelineInfo.flags = 0;
+			pipelineInfo.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+			pipelineInfo.stage.pNext = nullptr;
+			pipelineInfo.stage.flags = 0;
+			pipelineInfo.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+			pipelineInfo.stage.module = shaderModule;
+			pipelineInfo.stage.pName = "main";
+			pipelineInfo.stage.pSpecializationInfo = nullptr;
+			pipelineInfo.layout = kernelInfo.pipelineLayout;
+			pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
+			pipelineInfo.basePipelineIndex = -1;
+
 			const VkResult res = vkCreateComputePipelines(mDevice, mPipelineCache, 1, &pipelineInfo, nullptr, &kernelInfo.pipeline);
 			if (res != VK_SUCCESS)
 			{
-				std::cerr << "Failed to create compute pipeline for " << kernelName << " (result: " << res << ")" << std::endl;
+				std::cerr << "Failed to create compute pipeline for " << kernelName << " (" << VkResultToString(res) << ")" << std::endl;
 				vkDestroyShaderModule(mDevice, shaderModule, nullptr);
 				return nullptr;
 			}
 		}
 
+		// now that the pipeline was created we can delete the shader module
 		vkDestroyShaderModule(mDevice, shaderModule, nullptr);
 
+		// allocate buffer for kernel arguments
 		kernelInfo.pArgsBuffer = Alloc(kernelInfo.reflectionInfo.argsBufferSize, AllocationMode::Shared);
 		if (kernelInfo.pArgsBuffer == nullptr)
 		{
@@ -431,6 +437,7 @@ const AdapterVk::KernelInfo* AdapterVk::RequestKernel(const uint32_t id)
 
 		kernelInfo.argsBufferDeviceAddress = GetAllocation(kernelInfo.pArgsBuffer)->deviceAddress;
 
+		// now that everyhting succeeded we can finally store all information to the kernel cache
 		kernel.Swap(kernelInfo);
 	}
 
@@ -500,17 +507,20 @@ bool AdapterVk::BuildSlangProgram(const std::string& kernelName, slang::ICompone
 		}
 	}
 
-	VkShaderModuleCreateInfo moduleCreateInfo;
-	moduleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-	moduleCreateInfo.pNext = nullptr;
-	moduleCreateInfo.flags = 0;
-	moduleCreateInfo.codeSize = pSPIRVCode->getBufferSize();
-	moduleCreateInfo.pCode = (const uint32_t*)pSPIRVCode->getBufferPointer();
-
-	if (vkCreateShaderModule(mDevice, &moduleCreateInfo, nullptr, &shaderModule) != VK_SUCCESS)
 	{
-		std::cerr << "Failed to create shader VkShaderModule for kernel " << kernelName << std::endl;
-		return false;
+		VkShaderModuleCreateInfo moduleCreateInfo;
+		moduleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+		moduleCreateInfo.pNext = nullptr;
+		moduleCreateInfo.flags = 0;
+		moduleCreateInfo.codeSize = pSPIRVCode->getBufferSize();
+		moduleCreateInfo.pCode = (const uint32_t*)pSPIRVCode->getBufferPointer();
+
+		const VkResult res = vkCreateShaderModule(mDevice, &moduleCreateInfo, nullptr, &shaderModule);
+		if (res != VK_SUCCESS)
+		{
+			std::cerr << "Failed to create shader VkShaderModule for kernel " << kernelName << "(" << VkResultToString(res) << ")" << std::endl;
+			return false;
+		}
 	}
 
 	return true;
