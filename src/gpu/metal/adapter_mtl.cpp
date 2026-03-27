@@ -104,7 +104,7 @@ bool AdapterMtl::IsInitialized() const
 {
 	// the command queue is initialized as last in the initialization process,
 	// so if we have a valid queue, we know the initialization has already succeeded in the past
-	return mpCommandQueue != nullptr;
+	return mpCommandQueue.get() != nullptr;
 }
 
 bool AdapterMtl::Init(const bool debugMode)

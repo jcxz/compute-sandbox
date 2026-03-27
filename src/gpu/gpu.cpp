@@ -4,14 +4,19 @@
 #ifdef _WIN32
 #include <Windows.h>
 #endif
+// RenderDoc currently does not support MacOS
+#ifndef __APPLE__
 #include "RenderDoc/renderdoc_app.h"
+#endif
 
 #include <iostream>
 
 
 
+#ifndef __APPLE__
 // for more see: https://renderdoc.org/docs/in_application_api.html
 static RENDERDOC_API_1_1_2* gRdocApi = nullptr;
+#endif
 // a pointer to the GPU adapter 	instance
 static gpu::IAdapter* gAdapter = nullptr;
 // a flag indicating whether the GPU api was initialized successfully
@@ -20,11 +25,12 @@ static bool gIsGpuInitialized = false;
 namespace gpu
 {
 
-extern IAdapter* CreateMetalAdapter();
+extern IAdapter* CreateMetalAdapter(const bool debugMode);
 extern IAdapter* CreateVulkanAdapter(const bool debugMode);
 
 }
 
+#ifndef __APPLE__
 static bool InitRDocCapture()
 {
 #ifdef _WIN32
@@ -44,6 +50,7 @@ static bool InitRDocCapture()
 	// RenderDoc is not present (most likely we are not running via RenderDoc)
 	return true;
 }
+#endif
 
 static bool InitGpuAdapter(const uint32_t flags, const GpuAdapterType type)
 {
@@ -52,7 +59,7 @@ static bool InitGpuAdapter(const uint32_t flags, const GpuAdapterType type)
 		case GpuAdapterType::Default:
 			// pick the first enabled Adapter whichever that may be
 #ifdef BUILD_METAL_ADAPTER
-		case GpuAdapterType::Metal: gAdapter = gpu::CreateMetalAdapter(); break;
+		case GpuAdapterType::Metal: gAdapter = gpu::CreateMetalAdapter(flags & GpuFlags::Debug); break;
 #endif
 #ifdef BUILD_VULKAN_ADAPTER
 		case GpuAdapterType::Vulkan: gAdapter = gpu::CreateVulkanAdapter(flags & GpuFlags::Debug); break;
@@ -71,8 +78,10 @@ bool InitializeGpu(const uint32_t flags, const GpuAdapterType type)
 
 	if (flags & GpuFlags::RDocCapture)
 	{
+#ifndef __APPLE__
 		if (!InitRDocCapture())
 			return false;
+#endif
 	}
 
 	if (!InitGpuAdapter(flags, type))
@@ -90,14 +99,18 @@ void TerminateGpu()
 
 void BeginGpuCapture()
 {
+#ifndef __APPLE__
 	if (gRdocApi)
 		gRdocApi->StartFrameCapture(nullptr, nullptr);
+#endif
 }
 
 void EndGpuCapture()
 {
+#ifndef __APPLE__
 	if (gRdocApi)
 		gRdocApi->EndFrameCapture(nullptr, nullptr);
+#endif
 }
 
 void* GpuAlloc(const size_t size, const AllocationMode mode)
